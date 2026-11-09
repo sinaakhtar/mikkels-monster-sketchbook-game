@@ -26,6 +26,8 @@ function prepBoss(b) {
   b.anim = st[0]; b.voiceType = st[1];
   b.pitch = clamp(64 / b.r, 0.7, 1.35) * (0.9 + (hashStr(b.id) % 20) / 100);
   b.ax = b.x; b.ay = b.y; b.vel = 0; b.lean = 0; b.flipS = 1; b.flipT = 1; b.punch = 0; b.land = 0; b.hurtT = 0;
+  b.windP = 0; b.strikeT = 0; b.strikeDur = 0.34; b.strikeKind = ''; b.strikeSide = 0; b.strikeAng = 0;
+  b.moveKind = ''; b.swingSide = 0; b.swingIdx = 0; b.swingMax = 1; b.dashing = null; b.beaming = 0;
   b.prevWind = 0; b.prevAir = 0; b.at = Math.random() * 10; b.intro = 1.9;
   b.auraCol = '255,70,50';
   setupRig(b);
@@ -67,17 +69,23 @@ function updateBossAnim(b, dt) {
   b.vel += (Math.min(sp, 1200) - b.vel) * Math.min(1, dt * 10);
   const c = Math.cos(b.face); if (c < -0.2) b.flipT = -1; else if (c > 0.2) b.flipT = 1;
   b.flipS += (b.flipT - b.flipS) * Math.min(1, dt * 9);
+  if (b.wind <= 0) b.windP = 0;
   let lt = clamp((dx / Math.max(dt, 1e-3)) / 700, -0.45, 0.45) * b.flipT;
-  if (b.wind > 0) lt = -0.32;
-  if (b.punch > 0) lt = 0.55;
+  if (b.wind > 0) lt = -0.18 - 0.34 * (b.windP || 0);
+  if (b.dashing) lt = 0.58;
+  if (b.strikeT > 0) {
+    const su = 1 - b.strikeT / Math.max(b.strikeDur || 0.34, 0.01);
+    lt = Math.sin(su * Math.PI) * 0.72;
+  } else if (b.punch > 0) lt = 0.55;
   if (b.hurtT > 0) lt = -0.35;
   if (b.stagger > 0) lt = Math.sin(F.time * 4) * 0.25;
-  b.lean += (lt - b.lean) * Math.min(1, dt * 12);
-  if (b.prevWind > 0 && b.wind <= 0 && !b.dead) b.punch = 0.22;
+  b.lean += (lt - b.lean) * Math.min(1, dt * 15);
+  if (b.prevWind > 0 && b.wind <= 0 && !b.dead) b.punch = Math.max(b.punch || 0, 0.28);
   if (b.prevAir > 30 && b.air <= 0) b.land = 0.32;
   b.prevWind = b.wind; b.prevAir = b.air;
   b.voiceT = Math.max(0, (b.voiceT || 0) - dt);
-  b.punch = Math.max(0, b.punch - dt); b.land = Math.max(0, b.land - dt); b.hurtT = Math.max(0, b.hurtT - dt);
+  b.punch = Math.max(0, b.punch - dt); b. strikeT = Math.max(0, (b.strikeT || 0) - dt);
+  b.land = Math.max(0, b.land - dt); b.hurtT = Math.max(0, b.hurtT - dt);
   if (b.intro > 0) {
     b.intro -= dt;
     if (Math.random() < 0.7) F.fx.push({ x: b.x + rand(-b.r, b.r), y: b.y + b.r * 0.5 + rand(-8, 8), vx: rand(-30, 30), vy: rand(-140, -40), life: 0.7, t: 0, col: Math.random() < 0.5 ? '#1a0a10' : '#5a1020', size: rand(4, 9) });
@@ -117,17 +125,30 @@ function drawBossFancy(b) {
     case 'slither': wave = 1.6; sway = 0.9; bob = Math.sin(t * 3) * 4; break;
     case 'hop': { const fast = moving > 0.25, h = Math.abs(Math.sin(t * (fast ? 9 : 3))); bob = -h * (fast ? 28 : 7); sy *= 1 + (h - 0.5) * 0.1; sx *= 1 - (h - 0.5) * 0.06; } break;
   }
-  if (b.wind > 0) { sy *= 1.08; sx *= 0.95; }
-  if (b.punch > 0) { const k = b.punch / 0.22; sx *= 1 + 0.15 * k; sy *= 1 - 0.1 * k; }
+  if (b.wind > 0) {
+    const wp = b.windP || 0;
+    sy *= 1 + 0.11 * wp; sx *= 1 - 0.06 * wp;
+  }
+  if (b.strikeT > 0) {
+    const su = 1 - b.strikeT / Math.max(b.strikeDur || 0.34, 0.01), sw = Math.sin(su * Math.PI);
+    sx *= 1 + 0.16 * sw; sy *= 1 - 0.1 * sw;
+  } else if (b.punch > 0) {
+    const k = b.punch / 0.28; sx *= 1 + 0.15 * k; sy *= 1 - 0.1 * k;
+  }
+  if (b.spin > 0) {
+    rot += Math.sin(F.time * 28) * 0.14; sx *= 1.08 + Math.cos(F.time * 36) * 0.06;
+  }
   if (b.land > 0) { const k = b.land / 0.32; sx *= 1 + 0.25 * k; sy *= 1 - 0.22 * k; }
   if (b.air > 0) { sy *= 1.1; sx *= 0.93; }
   if (b.stagger > 0) { rot += Math.sin(F.time * 5) * 0.12; sy *= 0.92; sway = 2.5; }
   if (b.roar) { const s = 1 + Math.sin(b.roar * 30) * 0.05; sx *= s; sy *= s; }
   if (b.inhale) sx *= 1.1 + Math.sin(F.time * 30) * 0.02;
   if (b.hurtT > 0) { const k = b.hurtT / 0.18; sx *= 1 - 0.06 * k; sy *= 1 + 0.05 * k; }
-  const jx = b.wind > 0 ? Math.sin(F.time * 45) * 3 : 0;
+  const strikeLunge = b.strikeT > 0 ? Math.sin((1 - b.strikeT / Math.max(b.strikeDur || 0.34, 0.01)) * Math.PI) * b.r * 0.28 : 0;
+  const jx = (b.wind > 0 ? Math.sin(F.time * 45) * 3 * (0.4 + 0.6 * (b.windP || 0)) : 0) + Math.cos(b.face) * strikeLunge;
+  const jy = Math.sin(b.face) * strikeLunge * 0.65;
   const reveal = b.intro > 0 ? clamp(1 - (b.intro - 0.25) / 1.4, 0, 1) : 1;
-  const feetY = b.y + S * 0.25;
+  const feetY = b.y + S * 0.25 + jy;
   // shadow & intro ink puddle
   const shR = b.r * (A === 'float' ? 0.7 : 1) * (1 - Math.min(0.5, b.air / 400));
   if (b.intro > 0 || b.dead) {
@@ -135,19 +156,20 @@ function drawBossFancy(b) {
     g.save(); g.globalAlpha = 0.85 * k; g.fillStyle = '#12060a'; g.beginPath(); g.ellipse(b.x, b.y + b.r * 0.6, b.r * 1.5, b.r * 0.55, 0, 0, TAU); g.fill();
     g.globalAlpha = 0.5 * k; g.strokeStyle = `rgb(${b.auraCol})`; g.lineWidth = 3; g.stroke(); g.restore();
   }
-  drawShadow(b.x, b.y, shR, 0.5 * (b.dead ? Math.max(0, 1 - b.deadT) : b.alpha));
+  drawShadow(b.x + jx * 0.5, b.y + jy * 0.5, shR, 0.5 * (b.dead ? Math.max(0, 1 - b.deadT) : b.alpha));
   g.save();
   g.globalAlpha = b.dead ? Math.max(0, 1 - b.deadT / 2.6) : Math.max(b.alpha, b.intro > 0 ? 1 : 0);
   g.translate(b.x + jx, feetY - b.air + bob + (1 - reveal) * S * 0.35);
   g.rotate(rot);
   g.transform(1, 0, -b.lean * 0.28, 1, 0, 0);    // lean: top shifts forward
-  g.scale(b.flipS * sx, sy);
+  const spinFlip = b.spin > 0 ? Math.sign(Math.cos(F.time * 18) || 1) : 1;
+  g.scale(b.flipS * spinFlip * sx, sy);
   if (b.rig) { wave *= 0.4; sway *= 0.6; }
   const o = { sway, wave, breathe, reveal, melt: b.dead ? b.deadT : 0 };
   // aura glow
   if (b.glowImg) {
     const base = g.globalAlpha;
-    const k = b.p2 ? 0.65 + 0.3 * Math.sin(F.time * 6) : b.wind > 0 ? 0.75 : b.stagger > 0 ? 0.9 : 0.35;
+    const k = b.p2 ? 0.65 + 0.3 * Math.sin(F.time * 6) : b.wind > 0 ? 0.75 : b.strikeT > 0 ? 0.85 : b.stagger > 0 ? 0.9 : 0.35;
     g.globalAlpha = base * k; drawStrips(g, b.glowImg, S, t, o);
     if (b.p2) { g.globalCompositeOperation = 'lighter'; g.globalAlpha = base * 0.25 * (0.6 + 0.4 * Math.sin(F.time * 9)); drawStrips(g, b.glowImg, S, t, o); g.globalCompositeOperation = 'source-over'; }
     g.globalAlpha = base;
@@ -161,6 +183,10 @@ function drawBossFancy(b) {
     g.globalAlpha = base;
   }
   g.restore();
+  // Weapon / claw slash arc VFX on active strikes & whirlwind spins
+  if (!b.dead && (b.strikeT > 0 || b.spin > 0)) {
+    drawBossStrikeArc(g, b);
+  }
   if (b.slowT > 0) { g.save(); g.globalAlpha = 0.25; g.fillStyle = '#9fe3ff'; g.beginPath(); g.arc(b.x, b.y - b.r * 0.5 - b.air, b.r * 1.1, 0, TAU); g.fill(); g.restore(); }
   // sparkle cue ✦
   if (b.sparkT > 0) {
@@ -175,6 +201,54 @@ function drawBossFancy(b) {
     for (let i = 0; i < 3; i++) { const a = F.time * 4 + i * TAU / 3; g.fillText('★', b.x + Math.cos(a) * b.r * 0.8, b.y - b.r * 1.9 + Math.sin(a) * 12); }
     g.restore();
   }
+}
+
+function drawBossStrikeArc(g, b) {
+  if (b.spin > 0) {
+    const a0 = F.time * 16, r = b.r * 1.55, cy = b.y - b.r * 0.45 - b.air;
+    g.save();
+    for (let i = 0; i < 2; i++) {
+      const ang = a0 + i * Math.PI;
+      g.beginPath();
+      g.arc(b.x, cy, r, ang - 0.9, ang + 0.9);
+      g.arc(b.x, cy, r * 0.72, ang + 0.9, ang - 0.9, true);
+      g.closePath();
+      g.fillStyle = `rgba(${b.auraCol},0.55)`; g.fill();
+      g.beginPath();
+      g.arc(b.x, cy, r * 0.92, ang - 0.65, ang + 0.65);
+      g.strokeStyle = 'rgba(255,255,240,0.85)'; g.lineWidth = 6; g.lineCap = 'round'; g.stroke();
+    }
+    g.restore();
+    return;
+  }
+  const kind = b.strikeKind;
+  if (kind !== 'swipe' && kind !== 'grab' && kind !== 'chomp' && kind !== 'slam' && kind !== 'ring') return;
+  const dur = Math.max(b.strikeDur || 0.34, 0.01);
+  const u = clamp(1 - b.strikeT / dur, 0, 1);
+  const fade = Math.sin(u * Math.PI);
+  if (fade <= 0.02) return;
+  const ang = b.strikeAng != null ? b.strikeAng : b.face;
+  const dir = (b.strikeSide || 1) >= 0 ? 1 : -1;
+  const span = kind === 'slam' || kind === 'ring' ? 1.15 : 1.55;
+  const sweepCenter = ang + dir * (u - 0.45) * span * 0.85;
+  const a1 = sweepCenter - span * 0.52, a2 = sweepCenter + span * 0.52;
+  const reach = b.r * (kind === 'grab' ? 2.05 : kind === 'swipe' ? 1.85 : 1.55);
+  const cx = b.x + Math.cos(ang) * b.r * 0.25, cy = b.y - b.r * 0.48 - b.air + Math.sin(ang) * b.r * 0.18;
+  g.save();
+  g.globalAlpha = fade * 0.85;
+  g.beginPath();
+  g.arc(cx, cy, reach, a1, a2);
+  g.arc(cx, cy, reach * 0.66, a2, a1, true);
+  g.closePath();
+  g.fillStyle = `rgba(${b.auraCol},0.65)`;
+  g.fill();
+  g.beginPath();
+  g.arc(cx, cy, reach * 0.9, a1 + span * 0.12, a2 - span * 0.12);
+  g.strokeStyle = '#fff9e6';
+  g.lineWidth = Math.max(5, b.r * 0.11) * fade;
+  g.lineCap = 'round';
+  g.stroke();
+  g.restore();
 }
 
 // ---------------- VOICES ----------------
@@ -340,44 +414,194 @@ function setupRig(b) {
   const R = (typeof RIGS !== 'undefined') && RIGS[b.id];
   if (!R) return;
   b.rig = R; b.rigImg = img('a/rig_' + b.id + '.webp');
-  const pad = Math.round(R.s * 0.25), c = document.createElement('canvas');
+  const pad = Math.round(R.s * 0.38), c = document.createElement('canvas');
   c.width = c.height = R.s + pad * 2; c.pad = pad / R.s; b.rigC = c; b.rigPad = pad; b.jawOpen = 0; b.voiceT = 0;
+  b.partPose = R.parts.map(() => ({ a: 0, dx: 0, dy: 0, s: 1 }));
 }
 function rigPose(b, p, t) {
   const out = p.side === 'L' ? 1 : -1;          // + = swing away from the body
+  const cy = p.oy + p.h * 0.5;
+  // In the flipped rig space (+x is always forward toward the player):
+  // - If a limb/weapon's center is above its pivot (cy < p.py - 10, e.g. raised cleavers/hooks/horns/tentacles/wings), +a rotates it forward & down (+x, +y).
+  // - If a limb hangs below its pivot (cy >= p.py - 10, e.g. arms/legs), -a rotates it forward (+x) and +a coils it backward (-x).
+  const dirFwd = cy < p.py - 10 ? 1 : -1;
   const mv = Math.min(1, b.vel / 160), ph = p.ph || 0;
-  const wind = b.wind > 0, punch = b.punch > 0 ? b.punch / 0.22 : 0, roar = !!b.roar, stag = b.stagger > 0;
+  const wind = b.wind > 0, wp = wind ? clamp(b.windP || 0.5, 0, 1) : 0;
+  const wEase = wp * wp * (3 - 2 * wp);
+  const stDur = Math.max(b.strikeDur || 0.34, 0.01);
+  const stU = b.strikeT > 0 ? clamp(1 - b.strikeT / stDur, 0, 1) : 0;
+  const swing = b.strikeT > 0 ? Math.sin(stU * Math.PI) : (b.punch > 0 ? Math.sin((1 - b.punch / 0.28) * Math.PI) : 0);
+  const mKind = b.wind > 0 ? (b.moveKind || 'swipe') : (b.strikeT > 0 ? (b.strikeKind || 'swipe') : '');
+  const wSide = b.swingSide || 0, sSide = b.strikeSide || 0;
+  const isLeadWind = wSide === 0 || (wSide > 0 ? p.side === 'R' : p.side === 'L');
+  const isLeadStrike = sSide === 0 || (sSide > 0 ? p.side === 'R' : p.side === 'L');
+  const roar = !!b.roar, stag = b.stagger > 0;
+  const tremor = wind ? Math.sin(F.time * 42 + ph) * 0.06 * wp : 0;
   let a = 0, dx = 0, dy = 0, s = 1;
   switch (p.t) {
     case 'leg': {
-      const sw = Math.sin(t * 9 * (b.p2 ? 1.2 : 1) + (p.side === 'L' ? 0 : Math.PI));
-      a = sw * 0.32 * mv; dy = -Math.max(0, sw) * 7 * mv;
-      if (b.air > 0) { a = out * 0.4; dy = -8; }
-      if (b.land > 0) dy = 5;
-      if (stag) a = Math.sin(F.time * 5 + ph) * 0.12;
+      const freq = b.dashing ? 22 : 9 * (b.p2 ? 1.2 : 1);
+      const amp = b.dashing ? 1 : mv;
+      const sw = Math.sin(t * freq + (p.side === 'L' ? 0 : Math.PI));
+      a = sw * (b.dashing ? 0.55 : 0.34) * amp;
+      dx = -sw * (b.dashing ? 14 : 6) * amp;
+      dy = -Math.max(0, sw) * (b.dashing ? 14 : 8) * amp;
+      if (wind) {
+        if (mKind === 'charge') {
+          const paw = Math.sin(F.time * 28 + (p.side === 'L' ? 0 : Math.PI));
+          a = paw * 0.42 * wEase; dy = -Math.max(0, paw) * 10 * wEase;
+        } else {
+          a = (p.side === 'R' ? 0.32 : -0.22) * wEase;
+          dx = (p.side === 'R' ? -14 : 8) * wEase;
+          dy = -6 * wEase;
+        }
+      }
+      if (swing > 0) {
+        a = (p.side === 'R' ? -0.45 : 0.35) * swing;
+        dx = (p.side === 'R' ? 22 : -12) * swing;
+        dy = 4 * swing;
+      }
+      if (b.air > 0) { a = out * 0.45; dy = -10; }
+      if (b.land > 0) { a = out * 0.25; dy = 7; }
+      if (stag) a = Math.sin(F.time * 5 + ph) * 0.14;
       break;
     }
-    case 'arm': {
-      a = Math.sin(t * 2 + ph) * 0.08 + Math.sin(t * 9 + (p.side === 'L' ? Math.PI : 0)) * 0.22 * mv;
-      if (wind) a = out * 0.95 + Math.sin(F.time * 40) * 0.05;
-      if (punch) a = -out * 0.7 * punch;
-      if (roar || b.inhale) a = out * 0.75 + Math.sin(F.time * 25 + ph) * 0.06;
-      if (stag) a = out * 0.3 + Math.sin(F.time * 5 + ph) * 0.3;
-      if (b.dead) a = out * Math.min(1.2, 0.4 + b.deadT * 0.4);
+    case 'arm':
+    case 'tent':
+    case 'tail': {
+      const isTent = p.t !== 'arm';
+      const baseWave = isTent
+        ? Math.sin(t * 3 + ph) * 0.26
+        : Math.sin(t * 2 + ph) * 0.09 + Math.sin(t * 9 + (p.side === 'L' ? Math.PI : 0)) * 0.22 * mv;
+      a = baseWave;
+      if (wind) {
+        if (mKind === 'slam') {
+          // Both arms & weapon tentacles raise high overhead
+          a = -dirFwd * (1.35 * wEase) + tremor;
+          dx = -18 * wEase;
+          dy = -42 * wEase;
+          s = 1 + 0.15 * wEase;
+        } else if (mKind === 'charge') {
+          // Sweep arms/weapons back as the monster lowers its head to charge
+          a = -dirFwd * (0.95 * wEase) + tremor;
+          dx = -26 * wEase;
+          dy = 10 * wEase;
+        } else if (mKind === 'spray' || mKind === 'pool' || mKind === 'ring' || mKind === 'rain' || mKind === 'beam' || mKind === 'minions') {
+          // Raise wide to cast/channel
+          a = -dirFwd * (1.05 * wEase) + out * 0.35 * wEase + tremor;
+          dx = -20 * wEase;
+          dy = -28 * wEase;
+          s = 1 + 0.12 * wEase;
+        } else {
+          // swipe / grab: lead arm/weapon coils way back & overhead, off-hand braces
+          if (isLeadWind) {
+            a = -dirFwd * (1.32 * wEase) + tremor;
+            dx = -32 * wEase;
+            dy = -34 * wEase;
+            s = 1 + 0.16 * wEase;
+          } else {
+            a = -dirFwd * (0.55 * wEase) + out * 0.25 * wEase;
+            dx = -12 * wEase;
+            dy = -10 * wEase;
+          }
+        }
+      }
+      if (swing > 0) {
+        if (mKind === 'slam' || mKind === 'ring') {
+          // Overhead smash down into the ground
+          const arc = -0.3 * (1 - stU) + 1.38 * swing;
+          a = dirFwd * arc;
+          dx = 40 * swing;
+          dy = 48 * swing;
+          s = 1 + 0.2 * swing;
+        } else if (mKind === 'spray' || mKind === 'pool' || mKind === 'rain' || mKind === 'beam' || mKind === 'minions' || mKind === 'roar') {
+          a = dirFwd * (0.95 * swing) + out * 0.35 * swing;
+          dx = 34 * swing;
+          dy = 14 * swing;
+          s = 1 + 0.14 * swing;
+        } else {
+          // swipe / grab / chomp: whip the weapon/limb violently across the body toward the player!
+          if (isLeadStrike) {
+            const arc = -0.35 * (1 - stU) + 1.52 * swing;
+            a = dirFwd * arc;
+            dx = 64 * swing;
+            dy = (-14 * (1 - stU) + 34 * stU) * swing;
+            s = 1 + 0.22 * swing;
+          } else {
+            a = -dirFwd * (0.48 * swing);
+            dx = -16 * swing;
+            dy = 8 * swing;
+          }
+        }
+      }
+      if (b.dashing === 'grab') {
+        a = dirFwd * 1.22 + Math.sin(F.time * 28 + ph) * 0.14;
+        dx = 58;
+        dy = 12;
+        s = 1.16;
+      } else if (b.dashing === 'charge') {
+        a = -dirFwd * 0.85 + Math.sin(F.time * 24 + ph) * 0.1;
+        dx = -22;
+        dy = 10;
+      }
+      if (b.spin > 0) {
+        const spA = F.time * 28 + ph;
+        a = dirFwd * (0.95 + Math.sin(spA) * 0.75);
+        dx = 44 * Math.cos(spA);
+        dy = 20 * Math.sin(spA);
+        s = 1.18;
+      }
+      if (b.beaming > 0) {
+        a = dirFwd * 0.85 + Math.sin(F.time * 35 + ph) * 0.12;
+        dx = 28;
+        dy = -14;
+        s = 1.1;
+      }
+      if (roar || b.inhale) {
+        a = -dirFwd * 0.85 + out * 0.35 + Math.sin(F.time * 25 + ph) * 0.1;
+        dx = -16;
+        dy = -18;
+        s = 1.08;
+      }
+      if (stag) { a = out * 0.35 + Math.sin(F.time * 5 + ph) * 0.32; dy = 10; }
+      if (b.dead) { a = out * Math.min(1.2, 0.4 + b.deadT * 0.4); dy = 14; }
       break;
     }
     case 'head': {
       a = Math.sin(t * 1.7 + ph) * 0.06; dy = Math.sin(t * 2.3 + ph) * 2;
-      if (wind) { a = -0.08; dy = -5; }
-      if (punch) { a = 0.12 * punch; dy = 5 * punch; }
-      if (roar) { a = Math.sin(F.time * 30) * 0.06; dy = -9; s = 1.06; }
-      if (b.hurtT > 0) a += 0.2 * (b.hurtT / 0.18);
+      if (wind) {
+        if (mKind === 'charge') {
+          a = 0.28 * wEase; dx = 16 * wEase; dy = 14 * wEase;
+        } else if (mKind === 'slam') {
+          a = -0.22 * wEase; dx = -10 * wEase; dy = -16 * wEase;
+        } else {
+          a = -0.16 * wEase; dx = -14 * wEase; dy = -8 * wEase;
+        }
+      }
+      if (swing > 0) {
+        a = (mKind === 'slam' ? 0.34 : 0.24) * swing;
+        dx = 28 * swing;
+        dy = (mKind === 'slam' ? 26 : 12) * swing;
+        s = 1 + 0.08 * swing;
+      }
+      if (b.dashing === 'charge') { a = 0.35; dx = 32; dy = 18; s = 1.08; }
+      else if (b.dashing === 'grab') { a = 0.18; dx = 24; dy = 8; }
+      if (b.beaming > 0) { a = 0.14 + Math.sin(F.time * 30) * 0.04; dx = 22; dy = 4; s = 1.07; }
+      if (roar) { a = Math.sin(F.time * 30) * 0.08; dx = 8; dy = -12; s = 1.08; }
+      if (b.inhale) { a = -0.12 + Math.sin(F.time * 26) * 0.05; dx = -10; dy = -6; s = 1.08; }
+      if (b.hurtT > 0) { a -= 0.24 * (b.hurtT / 0.18); dx -= 12 * (b.hurtT / 0.18); }
       if (stag) a = Math.sin(F.time * 4) * 0.22;
       if (b.dead) a = 0.3;
       break;
     }
-    case 'tent': case 'tail': a = Math.sin(t * 3 + ph) * 0.3 + (wind ? out * 0.4 : 0) + (roar ? Math.sin(F.time * 20 + ph) * 0.3 : 0); break;
-    case 'wing': a = out * Math.sin(t * (b.anim === 'float' ? 11 : 5) + ph) * 0.5 - out * 0.1; break;
+    case 'wing': {
+      a = out * Math.sin(t * (b.anim === 'float' ? 11 : 5) + ph) * 0.5 - out * 0.1;
+      if (wind) { a = -out * (0.85 * wEase) + tremor; dy = -22 * wEase; s = 1 + 0.1 * wEase; }
+      if (swing > 0) { a = out * (1.15 * swing); dx = 20 * swing; dy = 18 * swing; s = 1 + 0.14 * swing; }
+      if (b.air > 0) { a = out * Math.sin(F.time * 24 + ph) * 0.75; dy = -14; }
+      if (b.spin > 0) { a = out * (0.9 + Math.sin(F.time * 30 + ph) * 0.5); s = 1.12; }
+      break;
+    }
   }
   return { a, dx, dy, s };
 }
@@ -387,19 +611,41 @@ function renderRig(b) {
   const c = b.rigC, g = c.getContext('2d'), pad = b.rigPad, t = b.at;
   g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.width, c.height); g.translate(pad, pad);
   let jo = 0.06 + 0.05 * Math.sin(t * 3);
-  if (b.wind > 0) jo = 0.55;
-  if (b.roar || b.inhale || b.intro > 0) jo = 1;
-  if (b.punch > 0) jo = Math.max(jo, 0.85 * b.punch / 0.22);
+  if (b.wind > 0) jo = 0.35 + 0.55 * (b.windP || 0.5);
+  if (b.roar || b.inhale || b.intro > 0 || b.beaming > 0) jo = 1.15;
+  if (b.dashing) jo = 0.95;
+  if (b.strikeT > 0) {
+    const su = 1 - b.strikeT / Math.max(b.strikeDur || 0.34, 0.01);
+    jo = b.strikeKind === 'chomp' ? (su < 0.35 ? 1.2 : 0.02) : Math.max(jo, 0.95 * Math.sin(su * Math.PI));
+  } else if (b.punch > 0) jo = Math.max(jo, 0.85 * b.punch / 0.28);
   if (b.hurtT > 0) jo = Math.max(jo, 0.6);
   if (b.stagger > 0) jo = 0.35 + 0.2 * Math.sin(F.time * 6);
   if (b.voiceT > 0) jo = Math.max(jo, 0.45 + 0.45 * Math.abs(Math.sin(F.time * 22)));
   if (b.dead) jo = 0.9;
-  b.jawOpen += (jo - b.jawOpen) * 0.3;
+  b.jawOpen += (jo - b.jawOpen) * 0.35;
+  if (!b.partPose || b.partPose.length !== R.parts.length) {
+    b.partPose = R.parts.map(() => ({ a: 0, dx: 0, dy: 0, s: 1 }));
+  }
+  const rate = (b.strikeT > 0 || b.dashing || b.spin > 0) ? 0.52 : 0.34;
+  const poses = R.parts.map((p, idx) => {
+    if (p.t === 'jaw' || p.t === 'maw') return null;
+    const tgt = rigPose(b, p, t);
+    const cur = b.partPose[idx];
+    cur.a += (tgt.a - cur.a) * rate;
+    cur.dx += (tgt.dx - cur.dx) * rate;
+    cur.dy += (tgt.dy - cur.dy) * rate;
+    cur.s += (tgt.s - cur.s) * rate;
+    return cur;
+  });
   const drawPart = (p, q) => { g.save(); g.translate(p.px + q.dx, p.py + q.dy); g.rotate(q.a); g.scale(q.s, q.s); g.drawImage(im, p.sx, p.sy, p.w, p.h, p.ox - p.px, p.oy - p.py, p.w, p.h); g.restore(); };
-  for (const p of R.parts) if (p.z < 0) drawPart(p, rigPose(b, p, t));
+  for (let i = 0; i < R.parts.length; i++) {
+    const p = R.parts[i];
+    if (p.z < 0 && poses[i]) drawPart(p, poses[i]);
+  }
   g.drawImage(im, 0, 0, R.s, R.s, 0, 0, R.s, R.s);
   let headP = null, headQ = null;
-  for (const p of R.parts) {
+  for (let i = 0; i < R.parts.length; i++) {
+    const p = R.parts[i];
     if (p.z < 0) continue;
     if (p.t === 'jaw') {
       const q = { a: 0, dx: 0, dy: b.jawOpen * p.h * 0.4, s: 1 };
@@ -408,7 +654,7 @@ function renderRig(b) {
       continue;
     }
     if (p.t === 'maw') { const o = b.jawOpen; drawPart(p, { a: Math.sin(F.time * 3) * 0.08 * o, dx: 0, dy: 0, s: 1 + o * 0.15 }); continue; }
-    const q = rigPose(b, p, t);
+    const q = poses[i];
     if (p.t === 'head') { headP = p; headQ = q; }
     drawPart(p, q);
   }

@@ -39,8 +39,20 @@ def key_green(rgb):
     f[..., 1] = np.where(edge | (greenness > 0), np.minimum(g, np.maximum(r, b) + 8), g)
     return np.dstack([np.clip(f, 0, 255).astype(np.uint8), a8])
 
-def align(new_rgba, old_rgba):
-    """similarity transform mapping new -> old frame"""
+def frame_creature(rgba):
+    """Center and fit the full creature within [12..500] so no horns/hands/feet/weapons clip at the 512 border."""
+    ys, xs = np.where(rgba[..., 3] > 40)
+    if len(xs) == 0:
+        return rgba
+    x0, y0, x1, y1 = xs.min(), ys.min(), xs.max(), ys.max()
+    bw, bh = max(1, x1 - x0), max(1, y1 - y0)
+    fit_s = min(1.0, (S - 24) / max(bw, bh))
+    cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+    M_fit = np.float32([[fit_s, 0, S / 2.0 - fit_s * cx], [0, fit_s, S / 2.0 - fit_s * cy]])
+    return cv2.warpAffine(rgba, M_fit, (S, S), flags=cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
+
+def find_transform(new_rgba, old_rgba):
+    """Similarity transform M mapping new_rgba -> old_rgba, and its inverse M_inv mapping old_rgba -> new_rgba."""
     def gray(x):
         a = x[..., 3:4].astype(np.float32) / 255
         return cv2.cvtColor((x[..., :3] * a).astype(np.uint8), cv2.COLOR_RGB2GRAY)
@@ -67,14 +79,15 @@ def align(new_rgba, old_rgba):
         s = min((b[2] - b[0]) / max(1, a[2] - a[0]), (b[3] - b[1]) / max(1, a[3] - a[1]))
         cxa, cya, cxb, cyb = (a[0] + a[2]) / 2, (a[1] + a[3]) / 2, (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
         M = np.float32([[s, 0, cxb - s * cxa], [0, s, cyb - s * cya]])
-    out = cv2.warpAffine(new_rgba, M, (S, S), flags=cv2.INTER_LANCZOS4, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
-    return out, how
+    M_inv = cv2.invertAffineTransform(M)
+    return M, M_inv, how
 
 def refresh_game_images(mid, rgba):
     im = Image.fromarray(rgba)
     im.resize((384, 384), Image.LANCZOS).save(f'{ROOT}/game/a/{mid}.webp', quality=82, method=6)
 
 def main():
+    import json
     ids = sys.argv[1:] or sorted(os.path.splitext(os.path.basename(p))[0] for p in glob.glob(f'{ROOT}/art/clean/*.png') if '_roar' not in p)
     os.makedirs(f'{ROOT}/art/cut_orig', exist_ok=True)
     done = []
@@ -89,12 +102,14 @@ def main():
         h, w = new.shape[:2]; side = max(h, w)                 # pad to square with green, then 512
         sq = np.zeros((side, side, 3), np.uint8); sq[..., 1] = 255; sq[(side - h) // 2:(side - h) // 2 + h, (side - w) // 2:(side - w) // 2 + w] = new
         keyed = key_green(cv2.resize(sq, (S, S), interpolation=cv2.INTER_AREA))
-        aligned, how = align(keyed, old)
-        Image.fromarray(aligned).save(old_p)
+        framed = frame_creature(keyed)
+        _, M_inv, how = find_transform(framed, old)
+        json.dump(M_inv.tolist(), open(f'{ROOT}/rig/tx_{mid}.json', 'w'))
+        Image.fromarray(framed).save(old_p)
         fg = f'{ROOT}/rig/fg_{mid}.png'                        # creature mask is now just the alpha
-        Image.fromarray(((aligned[..., 3] > 127) * 255).astype(np.uint8)).save(fg)
-        refresh_game_images(mid, aligned)
-        vis = np.concatenate([old, aligned], 1); bg = np.full_like(vis, (60, 50, 60, 255)); a = vis[..., 3:4] / 255
+        Image.fromarray(((framed[..., 3] > 127) * 255).astype(np.uint8)).save(fg)
+        refresh_game_images(mid, framed)
+        vis = np.concatenate([old, framed], 1); bg = np.full_like(vis, (60, 50, 60, 255)); a = vis[..., 3:4] / 255
         Image.fromarray((vis[..., :3] * a + bg[..., :3] * (1 - a)).astype(np.uint8)).save(f'{ROOT}/rig/align_{mid}.jpg', quality=85)
         print(f'{mid}: aligned by {how}'); done.append(mid)
     if done:
@@ -103,3 +118,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
