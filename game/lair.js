@@ -246,12 +246,12 @@ function lairHit(o) {
   if (o.k === 'barrel') { armBarrel(o, 1.1); floatText(o.x, o.y - 50, 'RUN!', '#ffb04a', 22); }
   else if (o.k === 'drop') { if (o.state === 'hang') { o.state = 'falling'; o.tm = 0; sfx('creak'); floatText(o.lx, o.ly - 40, 'Look out!', '#ffd84a', 20); } }
   else if (o.k === 'shrine') {
-    if (o.state === 'idle') { o.state = 'cool'; o.cd = 35; F.p.imbue = { e: o.e, t: 12 }; sfx('imbue'); particles(o.x, o.y - 30, 30, { fire: '#ff8a2a', ice: '#9fe3ff', spark: '#ffe84a' }[o.e], 260, 0.8, 5); floatText(F.p.x, F.p.y - 60, ELEM[o.e] + ' weapon!', '#fff', 24); }
+    if (o.state === 'idle') { o.state = 'cool'; o.cd = 35; F.p.imbue = { e: o.e, t: 12 }; sfx('imbue', { e: o.e }); particles(o.x, o.y - 30, 30, { fire: '#ff8a2a', ice: '#9fe3ff', spark: '#ffe84a' }[o.e], 260, 0.8, 5); floatText(F.p.x, F.p.y - 60, ELEM[o.e] + ' weapon!', '#fff', 24); }
   }
 }
 function explode(o, mult = 1) {
   o.state = 'gone'; o.cd = 40; const v = o.v || 'fire', R = v === 'mine' ? 175 : 150, b = F.b;
-  shake(16); sfx('explode');
+  shake(16); sfx('explode', { x: o.x, v });
   const col = { fire: '#ff8a2a', confetti: '#ff5ad0', gas: '#9bd13a', bees: '#ffd23a', mine: '#ffb04a', ink: '#2a1030' }[v];
   particles(o.x, o.y, 40, col, 400, 0.7, 8); particles(o.x, o.y, 20, '#fff2c0', 250, 0.4, 5);
   if (v === 'confetti') for (let i = 0; i < 40; i++) { const a = Math.random() * TAU, s = rand(100, 380); F.fx.push({ x: o.x, y: o.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 1.2, t: 0, col: ['#ff5a5a', '#5ad0ff', '#ffe84a', '#7aff7a', '#ff5ad0'][i % 5], size: 4 }); }

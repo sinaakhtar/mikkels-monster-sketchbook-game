@@ -52,14 +52,14 @@ const UI = {
   },
   gift() {
     show('gift'); $('#giftFrom').textContent = 'from ' + GIFT_FROM;
-    $('#gift').onclick = () => { audioInit(); sfx('win'); $('#gift').classList.add('open'); setTimeout(() => { SAVE.giftOpened = true; save(); UI.title(); }, 1600); };
+    $('#gift').onclick = () => { audioInit(); sfx('gift'); $('#gift').classList.add('open'); setTimeout(() => { SAVE.giftOpened = true; save(); UI.title(); }, 1600); };
   },
   title() {
-    show('title');
+    show('title'); musicStart('map');
     $('#btnPlay').onclick = () => { sfx('click'); UI.map(); };
   },
   map() {
-    if (F) musicStop(); F = null; show('map');
+    if (F) musicStop(); F = null; show('map'); musicStart('map');
     const tabs = $('#tabs'); tabs.innerHTML = '';
     REGIONS.forEach((r, i) => {
       const un = regionUnlocked(i);
@@ -146,7 +146,7 @@ const UI = {
     $('#btnTitle').onclick = () => { sfx('click'); UI.title(); };
   },
   intro(id) {
-    const b = BOSSES.find(x => x.id === id); show('intro');
+    const b = BOSSES.find(x => x.id === id); show('intro'); musicStart('map');
     const spot = (typeof OSLO_SPOTS !== 'undefined' && OSLO_SPOTS[id]) || [50, 50, REGIONS[b.region].name];
     const ip = $('#introPic');
     ip.style.backgroundImage = 'none';
@@ -171,10 +171,10 @@ const UI = {
     if (!SAVE.seenTut) { F.paused = true; show('tut'); $('#tut').onclick = () => { SAVE.seenTut = true; save(); show('none'); F.paused = false; }; }
   },
   pause() {
-    if (!F) return; F.paused = true; show('pause'); if (MUS.gain && AC) MUS.gain.gain.setTargetAtTime(0.25, AC.currentTime, 0.1);
-    $('#btnResume').onclick = () => { show('none'); F.paused = false; loop.last = performance.now(); if (MUS.gain && AC) MUS.gain.gain.setTargetAtTime(1, AC.currentTime, 0.1); };
-    $('#btnQuit').onclick = () => { UI.map(); };
-    $('#btnRetry2').onclick = () => { UI.fight(F.b.id); };
+    if (!F) return; F.paused = true; show('pause'); musicPause(true);
+    $('#btnResume').onclick = () => { show('none'); F.paused = false; loop.last = performance.now(); musicPause(false); };
+    $('#btnQuit').onclick = () => { musicPause(false); UI.map(); };
+    $('#btnRetry2').onclick = () => { musicPause(false); UI.fight(F.b.id); };
   },
   fightOver(result, f) {
     const b = f.b.def, first = !SAVE.beaten[b.id];
@@ -210,7 +210,7 @@ const UI = {
     $('#btnForge2').onclick = () => { sfx('click'); UI.forge('weapons'); };
   },
   forge(tab, backTo) {
-    show('forge'); UI.forgeBack = backTo || UI.forgeBack;
+    show('forge'); musicStart('forge'); UI.forgeBack = backTo || UI.forgeBack;
     $('#fbones').textContent = SAVE.bones;
     document.querySelectorAll('#ftabs button').forEach(b => { b.classList.toggle('sel', b.dataset.t === tab); b.onclick = () => { sfx('click'); UI.forge(b.dataset.t); }; });
     const L = $('#flist'); L.innerHTML = '';
@@ -219,7 +219,7 @@ const UI = {
       if (btnTxt && onClick) r.querySelector('button').onclick = () => { onClick(); UI.forge(tab); };
       L.appendChild(r);
     };
-    const pay = (c) => { if (SAVE.bones < c) { UI.toast('Not enough bones! Fight more monsters 🦴'); return false; } SAVE.bones -= c; sfx('win'); save(); return true; };
+    const pay = (c) => { if (SAVE.bones < c) { UI.toast('Not enough bones! Fight more monsters 🦴'); return false; } SAVE.bones -= c; sfx('craft'); save(); return true; };
     if (tab === 'weapons') {
       for (const k in WEAPONS) {
         const w = WEAPONS[k], lvl = SAVE.wlvl[k] || 0, owned = SAVE.owned[k], eq = SAVE.equip.weapon === k;
@@ -276,13 +276,13 @@ const UI = {
     $('#btnFBack').onclick = () => { sfx('click'); const b = UI.forgeBack; UI.forgeBack = null; b ? UI.intro(b) : UI.map(); };
   },
   settings() {
-    show('settings');
+    show('settings'); musicStart('map');
     const d = $('#diffs'); d.innerHTML = '';
     for (const k in DIFFS) { const x = DIFFS[k], b = h(`<button class="${SAVE.diff === k ? 'sel' : ''}"><b>${x.name}</b><span>${x.desc}</span></button>`); b.onclick = () => { SAVE.diff = k; save(); sfx('click'); UI.settings(); }; d.appendChild(b); }
     $('#btnSound').textContent = 'Sound: ' + (SAVE.sound ? 'ON 🔊' : 'OFF 🔇');
-    $('#btnSound').onclick = () => { SAVE.sound = !SAVE.sound; save(); UI.settings(); };
+    $('#btnSound').onclick = () => { SAVE.sound = !SAVE.sound; save(); syncAudioSettings(); if (SAVE.sound) sfx('click'); UI.settings(); };
     $('#btnMusic').textContent = 'Music: ' + (SAVE.music !== false ? 'ON 🎵' : 'OFF');
-    $('#btnMusic').onclick = () => { SAVE.music = SAVE.music === false; save(); UI.settings(); };
+    $('#btnMusic').onclick = () => { SAVE.music = SAVE.music === false; save(); syncAudioSettings(); sfx('click'); UI.settings(); };
     let resetN = 0;
     $('#btnReset').onclick = () => { resetN++; if (resetN < 3) { $('#btnReset').textContent = `Tap ${3 - resetN} more times to erase everything`; return; } localStorage.removeItem(SAVE_KEY); SAVE = DEFAULT_SAVE(); SAVE.giftOpened = true; save(); UI.map(); };
     $('#btnTest').onclick = () => { BOSSES.forEach(b => { SAVE.items[b.drop.id] = true; }); SAVE.bones += 5000; BOSSES.filter(b => b.boss && !b.final).forEach(b => SAVE.beaten[b.id] = SAVE.beaten[b.id] || 1); BOSSES.filter(b => !b.boss).forEach(b => SAVE.beaten[b.id] = SAVE.beaten[b.id] || 1); save(); UI.toast('Test mode: everything unlocked, +5000 bones'); };
@@ -303,7 +303,7 @@ const UI = {
   reforged(k, lvl) {
     const T = WTIERS[weaponTier(lvl)], ov = h(`<div class="reforge"><div class="rf-in"><div class="rf-t">✨ RE-FORGED! ✨</div><div class="rf-c"></div><div class="rf-n">${T.name} ${WEAPONS[k].name}</div><div class="rf-s">It glows with new power…</div></div></div>`);
     ov.querySelector('.rf-c').appendChild(weaponPreview(k, lvl, 300, 110));
-    document.body.appendChild(ov); sfx('win'); sfx('imbue');
+    document.body.appendChild(ov); sfx('reforge');
     let anim = true; const tick = () => { if (!anim) return; const c = ov.querySelector('canvas'); const n = weaponPreview(k, lvl, 300, 110); c.replaceWith(n); requestAnimationFrame(tick); }; requestAnimationFrame(tick);
     ov.onclick = () => { anim = false; ov.remove(); };
   },
