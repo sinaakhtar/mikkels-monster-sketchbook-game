@@ -41,6 +41,7 @@ Monster ids: `m27…m42` are the first batch, `n0…n26` / `h0…h14` the later 
   5. If a design changed a lot, re-annotate that monster: `python tools/gridsheet.py rig/sheet.jpg <id>`, edit its entry in `rig/rigs_*.json`, then `python rig/build.py <id>`.
   The model defaults to `gemini-2.5-flash-image`; set `NANO_MODEL` to use a newer one.
 - **Rebuild one rig after editing outlines:** `python rig/build.py <id>` (requires opencv-python, numpy, pillow).
+- **Deploy to GitHub Pages (`https://sinaakhtar.github.io/mikkels-monster-sketchbook-game/`):** Whenever pushing changes to `main`, push to both the private repo (`origin`) and the public Pages repo (`git push https://github.com/sinaakhtar/mikkels-monster-sketchbook-game.git main`), which triggers `.github/workflows/pages.yml`.
 
 ## Design rules worth keeping
 - Every attack is telegraphed: red danger shape, then a white ✦ sparkle just before it hits. Rolls have i-frames.
