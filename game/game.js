@@ -77,6 +77,9 @@ const SFX = {
   buzz: () => { tone(220, 0.5, 'sawtooth', 0.04, 240); tone(233, 0.5, 'sawtooth', 0.03, 225); },
   heal: () => { [660, 880, 1100].forEach((f, i) => tone(f, 0.2, 'sine', 0.07, null, i * 0.07)); },
   imbue: () => { tone(300, 0.5, 'sawtooth', 0.05, 900); noise(0.4, 0.08, 3000); },
+  clang: () => { tone(920, 0.14, 'triangle', 0.11, 620); tone(1380, 0.18, 'sine', 0.08, 1100); },
+  whip: () => { noise(0.11, 0.15, 3800); tone(420, 0.12, 'sawtooth', 0.07, 140); },
+  zap: () => { tone(520, 0.16, 'sawtooth', 0.08, 180); noise(0.12, 0.10, 3200); },
 };
 function sfx(n) { try { SFX[n] && SFX[n](); } catch (e) {} }
 
@@ -437,6 +440,257 @@ MOVES.spin = function* (b, o) {
   }
   b.contact = 0; b.spin = 0; yield* W(o.rec || 1.3);
 };
+MOVES.donut = function* (b, o) {
+  const rIn = b.r + (o.safe || 105), rOut = o.rOut || 560, T = tele(b, o.T || 1.05);
+  addHaz({ type: 'donut', x: b.x, y: b.y, rIn, rOut, warn: T, dmg: dmgOf(b, o.dmg || 26), col: o.col || '#ff3020', name: 'donut' });
+  yield* waitSpark(b, T, false);
+  yield* W(0.28);
+  if (o.follow) {
+    const T2 = tele(b, 0.68);
+    addHaz({ type: 'circle', x: b.x, y: b.y, r: rIn + 15, warn: T2, dmg: dmgOf(b, o.dmg || 24), col: o.col, name: 'slam' });
+    yield* waitSpark(b, T2, false);
+    shake(10); sfx('slam'); dust(b.x, b.y, 18);
+  }
+  yield* W(o.rec || 0.85);
+};
+MOVES.cross = function* (b, o) {
+  const lanes = o.lanes || 4, waves = o.waves || 2, baseA = Math.atan2(tgt(b).y - b.y, tgt(b).x - b.x);
+  for (let w = 0; w < waves; w++) {
+    const T = tele(b, w === 0 ? (o.T || 0.78) : 0.58), rot = baseA + w * (Math.PI / lanes);
+    for (let i = 0; i < lanes; i++) {
+      addHaz({ type: 'line', x: b.x, y: b.y, ang: rot + i * TAU / lanes, len: 1500, w: o.w || 46, warn: T, fireDur: 0.22, dmg: dmgOf(b, o.dmg || 20), col: o.col || '#ff4a3a', name: 'cross' });
+    }
+    yield* waitSpark(b, T, false);
+    sfx('zap'); shake(6); yield* W(0.24);
+  }
+  yield* W(o.rec || 0.75);
+};
+MOVES.wavewall = function* (b, o) {
+  yield* waitSpark(b, tele(b, o.T || 0.72));
+  const waves = o.waves || 1, count = 11, step = 68, sp = o.sp || 305;
+  let gap = 3 + Math.floor(Math.random() * 4);
+  for (let w = 0; w < waves; w++) {
+    const g = tgt(b); faceTo(b, g);
+    const a = b.face, px = -Math.sin(a), py = Math.cos(a);
+    if (w > 0) gap = 2 + ((gap + 3) % 6);
+    for (let i = 0; i < count; i++) {
+      if (i === gap || i === gap + 1) continue;
+      const off = (i - (count - 1) / 2) * step;
+      const sx = b.x + Math.cos(a) * (b.r * 0.5) + px * off, sy = b.y + Math.sin(a) * (b.r * 0.5) + py * off;
+      if (sx < -35 || sx > AW + 35 || sy < -35 || sy > AH + 35) continue;
+      addHaz({ type: 'proj', x: sx, y: sy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 14, warn: 0, life: 4.5, dmg: dmgOf(b, o.dmg || 16), col: o.col || '#ff5a3c', name: 'wavewall' });
+    }
+    sfx('shoot'); shake(4); yield* W(o.gap || 0.65);
+  }
+  yield* W(o.rec || 0.75);
+};
+MOVES.boomerang = function* (b, o) {
+  yield* waitSpark(b, tele(b, o.T || 0.65));
+  faceTo(b, tgt(b));
+  const n = o.n || 2, spread = (o.spread || (n === 1 ? 0 : 42)) * RAD, sp = o.sp || 640;
+  for (let i = 0; i < n; i++) {
+    const a = b.face - spread / 2 + (n === 1 ? 0 : spread * i / (n - 1));
+    addHaz({ type: 'proj', x: b.x + Math.cos(a) * b.r * 0.75, y: b.y + Math.sin(a) * b.r * 0.75, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, sp, boom: true, outT: o.outT || 0.58, ox: b.x, oy: b.y, owner: b, shape: 'blade', spinA: 0, r: o.pr || 16, warn: 0, life: 2.6, dmg: dmgOf(b, o.dmg || 18), col: o.col || '#e8e8f0', name: 'boomerang' });
+  }
+  sfx('whip');
+  yield* W(o.rec || 1.05);
+};
+MOVES.spiral = function* (b, o) {
+  yield* waitSpark(b, tele(b, o.T || 0.75), false);
+  const arms = o.arms || 3, dur = o.dur || 2.0, gap = o.gap || 0.13, rotSp = (o.rot || 2.1) * (Math.random() < 0.5 ? 1 : -1), sp = o.sp || 285;
+  let a0 = b.face, el = 0;
+  while (el < dur) {
+    for (let i = 0; i < arms; i++) {
+      const a = a0 + i * TAU / arms;
+      addHaz({ type: 'proj', x: b.x + Math.cos(a) * b.r * 0.7, y: b.y + Math.sin(a) * b.r * 0.7, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: o.pr || 11, warn: 0, life: 4.2, dmg: dmgOf(b, o.dmg || 14), col: o.col || '#ff6a9a', name: 'spiral' });
+    }
+    sfx('shoot'); a0 += rotSp * gap; b.face = a0; el += gap;
+    yield* W(gap);
+  }
+  yield* W(o.rec || 0.85);
+};
+MOVES.homing = function* (b, o) {
+  yield* waitSpark(b, tele(b, o.T || 0.65));
+  faceTo(b, tgt(b));
+  const n = o.n || 2, spread = 75 * RAD, sp = o.sp || 230;
+  for (let i = 0; i < n; i++) {
+    const a = b.face - spread / 2 + (n === 1 ? 0 : spread * i / (n - 1));
+    addHaz({ type: 'proj', x: b.x + Math.cos(a) * b.r * 0.8, y: b.y + Math.sin(a) * b.r * 0.8, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, sp, turn: o.turn || 1.85, trackT: o.trackT || 2.1, shape: 'wisp', r: 14, warn: 0, life: 2.75, dmg: dmgOf(b, o.dmg || 16), col: o.col || '#b89fff', name: 'homing' });
+  }
+  sfx('spawn');
+  yield* W(o.rec || 0.85);
+};
+MOVES.cluster = function* (b, o) {
+  yield* waitSpark(b, tele(b, 0.55));
+  for (let i = 0; i < (o.n || 2); i++) {
+    const g = tgt(b), lx = clamp(g.x + rand(-95, 95), 70, AW - 70), ly = clamp(g.y + rand(-95, 95), 70, AH - 70);
+    addHaz({ type: 'circle', x: lx, y: ly, r: o.R || 64, warn: tele(b, 0.9), dmg: dmgOf(b, o.dmg || 22), col: o.col || '#ff8a2a', arcFrom: { x: b.x, y: b.y }, shrap: o.shrap || 6, shrapSp: o.sp || 290, name: 'cluster' });
+    sfx('shoot'); yield* W(0.28);
+  }
+  yield* W(o.rec || 0.95);
+};
+MOVES.fissure = function* (b, o) {
+  yield* waitSpark(b, tele(b, o.T || 0.68));
+  shake(8); sfx('slam'); dust(b.x, b.y, 14);
+  const lines = o.lines || 1, spread = (o.spread || (lines === 2 ? 32 : 48)) * RAD, n = o.n || 6, step = o.step || 76, R = o.R || 46;
+  const angs = [], maxD = [];
+  for (let l = 0; l < lines; l++) {
+    const a = b.face - (lines === 1 ? 0 : spread / 2) + (lines === 1 ? 0 : spread * l / (lines - 1));
+    angs.push(a); maxD.push(rayBlock(b.x, b.y, a, (n + 1) * step));
+  }
+  for (let s = 1; s <= n; s++) {
+    const d = s * step;
+    for (let l = 0; l < lines; l++) {
+      if (d > maxD[l]) continue;
+      const px = b.x + Math.cos(angs[l]) * d, py = b.y + Math.sin(angs[l]) * d;
+      if (px < 20 || px > AW - 20 || py < 20 || py > AH - 20) continue;
+      addHaz({ type: 'circle', x: px, y: py, r: R, warn: tele(b, 0.38), dmg: dmgOf(b, o.dmg || 20), col: o.col || '#ff6a3a', name: 'fissure' });
+      particles(px, py, 4, o.col || '#c89a6a', 140, 0.35, 4);
+    }
+    yield* W(0.10);
+  }
+  yield* W(o.rec || 0.85);
+};
+MOVES.lash = function* (b, o) {
+  const T = tele(b, o.T || 0.62), len = o.len || 440, w = o.w || 38;
+  faceTo(b, tgt(b));
+  const h = addHaz({ type: 'line', x: b.x, y: b.y, ang: b.face, len, w, warn: T, fireDur: 0.22, rope: true, pull: 620, dmg: dmgOf(b, o.dmg || 14), col: o.col || '#ff5a7a', name: 'lash' });
+  let t = 0; b.wind = T;
+  while (t < T) {
+    t += BDT;
+    if (t < T * 0.68) faceTo(b, tgt(b));
+    h.x = b.x; h.y = b.y; h.ang = b.face;
+    if (!b.sparked && T - t < 0.26) spark(b);
+    yield;
+  }
+  b.sparked = false; b.wind = 0; sfx('whip');
+  yield* W(0.24);
+  if (dist(b, tgt(b)) < b.r + 165) {
+    yield* MOVES.swipe(b, { n: 1, arc: 125, range: 115, firstT: 0.52, dmg: 22, rec: o.rec || 0.75 });
+  } else {
+    yield* W(o.rec || 0.7);
+  }
+};
+MOVES.clones = function* (b, o) {
+  b.ghost = true; sfx('vanish'); let t = 0;
+  while (t < 0.3) { t += BDT; b.alpha = 1 - t / 0.3; yield; }
+  const g = tgt(b), n = o.n || 3, baseA = Math.random() * TAU, real = Math.floor(Math.random() * n), distR = 235;
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const a = baseA + i * TAU / n;
+    const p = { x: clamp(g.x + Math.cos(a) * distR, b.r + 20, AW - b.r - 20), y: clamp(g.y + Math.sin(a) * distR, b.r + 20, AH - b.r - 20), r: b.r };
+    pushSolids(p, b.r * 0.7); pts.push(p);
+  }
+  b.x = pts[real].x; b.y = pts[real].y; faceTo(b, g);
+  b.clones = [];
+  for (let i = 0; i < n; i++) if (i !== real) {
+    const p = pts[i], offA = (i - real) * 0.45;
+    const tx = g.x + Math.cos(offA) * 55, ty = g.y + Math.sin(offA) * 55;
+    b.clones.push({ x: p.x, y: p.y, r: b.r, face: Math.atan2(ty - p.y, tx - p.x), alpha: 0, hp: 1 });
+  }
+  t = 0; while (t < 0.2) { t += BDT; const k = t / 0.2; b.alpha = k; for (const c of b.clones) c.alpha = k; yield; }
+  b.alpha = 1; b.ghost = false;
+  const T = tele(b, o.T || 0.85);
+  const bLine = addHaz({ type: 'line', x: b.x, y: b.y, ang: b.face, len: 620, w: b.r * 1.4, warn: T, dmg: 0, name: 'clones' });
+  for (const c of b.clones) c.line = addHaz({ type: 'line', x: c.x, y: c.y, ang: c.face, len: 620, w: b.r * 1.4, warn: T, dmg: 0, name: 'clones' });
+  t = 0; b.wind = T;
+  while (t < T) {
+    t += BDT;
+    for (const c of b.clones) if (c.hp <= 0 && c.line) c.line.dead = true;
+    b.clones = b.clones.filter(c => c.hp > 0);
+    if (!b.sparked && T - t < 0.26) spark(b);
+    yield;
+  }
+  b.sparked = false; b.wind = 0; bLine.dead = true;
+  for (const c of b.clones) if (c.line) c.line.dead = true;
+  const g0 = tgt(b), dg = Math.min(dist(b, g0), 560), blocked = rayBlock(b.x, b.y, b.face, dg) < dg - 10;
+  if (!blocked) { b.contact = dmgOf(b, o.dmg || 22); b.contactName = 'clones'; }
+  sfx('dash');
+  let d = 0; const sp = 940;
+  while (d < 560) {
+    const s = sp * BDT; d += s;
+    if (!blocked) {
+      b.x += Math.cos(b.face) * s; b.y += Math.sin(b.face) * s;
+      const ph = pillarHitBy(b); if (ph) { b.clones = null; crash(b, ph); return; }
+      hitWall(b);
+    }
+    for (const c of b.clones) {
+      if (c.hp <= 0) continue;
+      c.x += Math.cos(c.face) * s; c.y += Math.sin(c.face) * s;
+      if (pillarHitBy(c) || hitWall(c)) { c.hp = 0; particles(c.x, c.y, 10, `rgb(${b.auraCol})`, 180, 0.45); continue; }
+      for (const tg of targetsFor()) if (dist(tg, c) < b.r * 0.8 + tg.r) hurt(tg, dmgOf(b, o.dmg || 20), c.x, c.y, 'clones');
+    }
+    b.clones = b.clones.filter(c => c.hp > 0);
+    yield;
+  }
+  for (const c of b.clones) particles(c.x, c.y, 12, `rgb(${b.auraCol})`, 180, 0.5);
+  b.clones = null; b.contact = 0;
+  yield* W(o.rec || 0.85);
+};
+MOVES.guard = function* (b, o) {
+  sfx('spark'); yield* W(tele(b, 0.28));
+  b.guard = 1; b.guardHit = false; b.guardCol = o.col || '#ffd84a';
+  let t = 0; const dur = o.dur || 1.25;
+  while (t < dur && !b.guardHit) { t += BDT; faceTo(b, tgt(b)); yield; }
+  const triggered = b.guardHit; b.guard = 0; b.guardHit = false;
+  if (triggered) {
+    const T = tele(b, 0.44);
+    addHaz({ type: 'circle', x: b.x, y: b.y, r: b.r + 105, warn: T, dmg: dmgOf(b, o.dmg || 26), col: o.col || '#ffb04a', name: 'guard' });
+    yield* waitSpark(b, T, false);
+    shake(12); sfx('boom');
+    if (o.shrap) {
+      for (let i = 0; i < o.shrap; i++) {
+        const a = i * TAU / o.shrap;
+        addHaz({ type: 'proj', x: b.x + Math.cos(a) * b.r * 0.7, y: b.y + Math.sin(a) * b.r * 0.7, vx: Math.cos(a) * 340, vy: Math.sin(a) * 340, r: 10, warn: 0, life: 2.5, dmg: dmgOf(b, 14), col: o.col || '#e8e8f0', name: 'guard' });
+      }
+      sfx('shoot');
+    }
+    yield* W(0.55);
+  } else {
+    floatText(b.x, b.y - b.r - 30, 'open!', '#9fe3ff', 20);
+    yield* W(o.rec || 1.05);
+  }
+};
+MOVES.pendulum = function* (b, o) {
+  const side = Math.random() < 0.5 ? 1 : -1, range = b.r + (o.range || 125), arc = 155 * RAD;
+  for (let i = 0; i < 2; i++) {
+    const T = tele(b, i === 0 ? 0.58 : 0.42), bias = (i === 0 ? -0.34 : 0.34) * side;
+    const h = addHaz({ type: 'cone', x: b.x, y: b.y, ang: b.face + bias, range, arc, warn: T, dmg: dmgOf(b, o.dmg || 22), name: 'pendulum' });
+    let t = 0; b.wind = T;
+    while (t < T) {
+      t += BDT; const g = tgt(b);
+      if (t < T * 0.6) { faceTo(b, g); if (dist(b, g) > range * 0.55) stepToward(b, g, b.speed * 0.65); }
+      h.x = b.x; h.y = b.y; h.ang = b.face + bias;
+      if (!b.sparked && T - t < 0.26) spark(b);
+      yield;
+    }
+    b.sparked = false; b.wind = 0;
+    b.x += Math.cos(b.face + bias) * 34; b.y += Math.sin(b.face + bias) * 34; clampE(b);
+    yield* W(0.12);
+  }
+  const g = tgt(b), da = Math.abs(angDiff(b.face, Math.atan2(g.y - b.y, g.x - b.x)));
+  if (da > 1.5) {
+    const backA = Math.atan2(g.y - b.y, g.x - b.x), T3 = tele(b, 0.48);
+    b.face = backA;
+    addHaz({ type: 'cone', x: b.x, y: b.y, ang: backA, range: range + 10, arc: 170 * RAD, warn: T3, dmg: dmgOf(b, o.dmg || 24), name: 'pendulum' });
+    yield* waitSpark(b, T3, false);
+    shake(6); yield* W(o.rec || 0.85);
+  } else {
+    yield* MOVES.slam(b, { R: 80, T: 0.74, dmg: o.dmg || 28, rec: o.rec || 0.95 });
+  }
+};
+MOVES.cage = function* (b, o) {
+  yield* waitSpark(b, tele(b, o.T || 0.68));
+  const g = tgt(b), n = o.n || 7, R = o.R || 215, cx = clamp(g.x, R + 35, AW - R - 35), cy = clamp(g.y, R + 35, AH - R - 35);
+  const posts = [], a0 = Math.random() * TAU;
+  for (let i = 0; i < n; i++) {
+    const a = a0 + i * TAU / n;
+    posts.push(addHaz({ type: 'post', x: cx + Math.cos(a) * R, y: cy + Math.sin(a) * R, r: 20, warn: 0.55, life: o.life || 3.8, dmg: dmgOf(b, o.dmg || 15), col: o.col || '#ff6a4a', name: 'cage' }));
+  }
+  for (let i = 0; i < n; i++) posts[i].next = posts[(i + 1) % n];
+  sfx('spawn'); shake(6);
+  yield* W(o.rec || 0.7);
+};
 function* ROAR(b) {
   b.wind = 1.2; b.moveKind = 'roar'; banner(b.name + ' is ANGRY!', '#ff5a44', 'It got faster…'); sfx('roar'); bossVoice(b, 'rage');
   let t = 0, done = false;
@@ -447,12 +701,15 @@ function* ROAR(b) {
 // ---------------- BOSS AI ----------------
 function pickMove(b) {
   const list = b.def.moves.concat(b.p2 ? b.def.p2 : []), g = tgt(b), d = dist(b, g);
-  const near = new Set(['swipe', 'grab', 'inhale']), far = new Set(['spray', 'beam', 'beam2', 'rain', 'ring']);
+  const near = new Set(['swipe', 'grab', 'inhale', 'pendulum', 'guard']),
+        far = new Set(['spray', 'beam', 'beam2', 'rain', 'ring', 'wavewall', 'spiral', 'homing', 'cluster', 'boomerang', 'lash', 'fissure']);
   let tot = 0; const ws = list.map(m => {
     let w = m.w || 1;
     if (near.has(m.k) && d > 320) w *= 0.25;
     if (far.has(m.k) && d < 160) w *= 0.5;
+    if (m.k === 'donut' && (d < 150 || d > 480)) w *= 0.4;
     if (m.k === 'minions' && F.minions.length >= 3) w = 0;
+    if (m.k === 'cage' && F.hz.some(h => h.type === 'post')) w = 0;
     if (m.k === b.last && b.lastN >= 2) w = 0;
     tot += w; return w;
   });
@@ -465,7 +722,7 @@ function updateBoss(b, dt) {
   b.bob += dt; b.flash = Math.max(0, b.flash - dt); b.sparkT = Math.max(0, b.sparkT - dt);
   if (b.gen && !b.dead && b.intro <= 0 && b.stagger <= 0) {
     const r = b.gen.next();
-    if (r.done) { b.gen = null; b.wind = 0; b.windP = 0; b.contact = 0; b.dashing = null; b.beaming = 0; b.sparked = false; }
+    if (r.done) { b.gen = null; b.wind = 0; b.windP = 0; b.contact = 0; b.dashing = null; b.beaming = 0; b.sparked = false; b.clones = null; b.guard = 0; b.guardHit = false; }
   }
   updateBossAnim(b, dt);
   if (b.intro > 0 && !b.dead) return;
@@ -512,14 +769,14 @@ function damageBoss(b, d, poise, col, quiet) {
     if (b.poise >= b.poiseMax && b.stagger <= 0 && b.hp > 0) staggerBoss(b, 2.6, 'STAGGERED!', 'Hit it now — extra damage!');
   }
   if (b.hp <= 0) {
-    b.hp = 0; b.dead = true; b.gen = null; b.contact = 0; b.air = 0; b.alpha = 1; b.dashing = null; b.beaming = 0;
+    b.hp = 0; b.dead = true; b.gen = null; b.contact = 0; b.air = 0; b.alpha = 1; b.dashing = null; b.beaming = 0; b.clones = null; b.guard = 0;
     F.hz.length = 0; F.minions.forEach(m => particles(m.x, m.y, 10, '#a33')); F.minions.length = 0;
     banner('MONSTER FELLED', '#f2d27a', b.name); sfx('win'); shake(20); F.over = true; F.result = 'win'; F.overT = 0;
     bossVoice(b, 'death'); musicStop(); b.stagger = 0;
   }
 }
 function staggerBoss(b, dur, text, sub) {
-  b.stagger = dur; b.gen = null; b.contact = 0; b.air = 0; b.alpha = 1; b.ghost = false; b.inhale = 0; b.spin = 0; b.wind = 0; b.windP = 0; b.dashing = null; b.beaming = 0; b.poise = b.poiseMax;
+  b.stagger = dur; b.gen = null; b.contact = 0; b.air = 0; b.alpha = 1; b.ghost = false; b.inhale = 0; b.spin = 0; b.wind = 0; b.windP = 0; b.dashing = null; b.beaming = 0; b.clones = null; b.guard = 0; b.guardHit = false; b.poise = b.poiseMax;
   b.sparked = false; banner(text, '#ffd84a', sub); sfx('stagger'); shake(10);
 }
 
@@ -529,10 +786,10 @@ function hurt(t, dmg, sx, sy, name, push) {
   if (t.isPlayer) {
     if (t.iframes > 0) { if (dmg > 0) { floatText(t.x, t.y - 40, 'dodge!', '#9fe3ff', 18); sfx('dodge'); t.dodges++; } return false; }
     if (t.inv > 0) return false;
-    if (push) { const a = Math.atan2(t.y - sy, t.x - sx); t.kx = Math.cos(a) * push; t.ky = Math.sin(a) * push; if (!dmg) return true; }
+    if (push && !dmg) { const a = Math.atan2(t.y - sy, t.x - sx); t.kx = Math.cos(a) * push; t.ky = Math.sin(a) * push; return true; }
     t.hp -= dmg; F.lastHit = name || 'default';
     if (t.state === 'drink') F.lastHit = 'drink';
-    const a = Math.atan2(t.y - sy, t.x - sx); t.kx = Math.cos(a) * 420; t.ky = Math.sin(a) * 420;
+    const kb = push || 420, a = Math.atan2(t.y - sy, t.x - sx); t.kx = Math.cos(a) * kb; t.ky = Math.sin(a) * kb;
     t.state = 'hurt'; t.t = 0; t.inv = 0.75; F.hitstop = 0.08; shake(10); sfx('hurt');
     particles(t.x, t.y, 12, '#e33', 240);
     floatText(t.x, t.y - 40, '-' + Math.round(dmg), '#ff5050', 22);
@@ -626,19 +883,39 @@ function checkPlayerHits(P) {
   const hits = (e, er) => { const d = dist(P, e); if (d - er > w.reach + P.r) return false; const a = Math.atan2(e.y - P.y, e.x - P.x); return Math.abs(angDiff(P.face, a)) < arc / 2 + Math.atan2(er, Math.max(d, 1)); };
   if (!b.dead && !b.ghost && b.air < 60 && !P.hitSet.has(b) && hits(b, b.r * 0.85)) {
     P.hitSet.add(b);
-    const last = P.combo === w.combo - 1 && w.combo > 2;
-    let d = w.dmg * (1 + WLVL_MULT * P.lvl) * (last ? 1.5 : 1);
-    const ch = P.imbue ? P.imbue.e : SAVE.equip.charm, weak = ch && ch === b.def.weak;
-    if (weak) d *= 1.35;
-    if (b.stagger > 0) d *= 1.7;
-    d = Math.round(d * rand(0.92, 1.08));
-    let poise = w.poise * (last ? 1.5 : 1) * (ch === 'spark' ? 1.7 : 1);
-    damageBoss(b, d, poise, weak ? '#ffd84a' : '#fff');
-    F.hitstop = w.dmg > 40 ? 0.09 : 0.045; shake(w.dmg > 40 ? 9 : 4); sfx(w.dmg > 40 ? 'bighit' : 'hit');
-    const hx = (P.x + b.x) / 2, hy = (P.y + b.y) / 2; particles(hx, hy, 10, '#fff2c0', 260, 0.35, 4);
-    if (ch === 'fire') { b.burnB += 0.22 * (weak ? 1.6 : 1); if (b.burnB >= 1) { b.burnB = 0; b.burnT = 4; floatText(b.x, b.y - b.r - 40, 'BURNING!', '#ff8a2a', 22); sfx('burn'); } }
-    if (ch === 'ice') { b.iceB += 0.16 * (weak ? 1.6 : 1); if (b.iceB >= 1) { b.iceB = 0; b.slowT = 4.5; floatText(b.x, b.y - b.r - 40, 'FROZEN!', '#9fe3ff', 22); particles(b.x, b.y, 20, '#cff', 200); } }
-    if (ch === 'spark') particles(hx, hy, 6, '#ffe84a', 300, 0.3, 3);
+    if (b.guard > 0) {
+      const chip = Math.max(1, Math.round(w.dmg * (1 + WLVL_MULT * P.lvl) * 0.2));
+      damageBoss(b, chip, 0, '#ccc', true);
+      b.guardHit = true; sfx('clang'); shake(5);
+      floatText(b.x, b.y - b.r - 35, 'GUARD!', '#ffd84a', 22);
+      particles((P.x + b.x) / 2, (P.y + b.y) / 2, 8, '#ffd84a', 240, 0.3, 4);
+    } else {
+      const last = P.combo === w.combo - 1 && w.combo > 2;
+      let d = w.dmg * (1 + WLVL_MULT * P.lvl) * (last ? 1.5 : 1);
+      const ch = P.imbue ? P.imbue.e : SAVE.equip.charm, weak = ch && ch === b.def.weak;
+      if (weak) d *= 1.35;
+      if (b.stagger > 0) d *= 1.7;
+      d = Math.round(d * rand(0.92, 1.08));
+      let poise = w.poise * (last ? 1.5 : 1) * (ch === 'spark' ? 1.7 : 1);
+      damageBoss(b, d, poise, weak ? '#ffd84a' : '#fff');
+      F.hitstop = w.dmg > 40 ? 0.09 : 0.045; shake(w.dmg > 40 ? 9 : 4); sfx(w.dmg > 40 ? 'bighit' : 'hit');
+      const hx = (P.x + b.x) / 2, hy = (P.y + b.y) / 2; particles(hx, hy, 10, '#fff2c0', 260, 0.35, 4);
+      if (ch === 'fire') { b.burnB += 0.22 * (weak ? 1.6 : 1); if (b.burnB >= 1) { b.burnB = 0; b.burnT = 4; floatText(b.x, b.y - b.r - 40, 'BURNING!', '#ff8a2a', 22); sfx('burn'); } }
+      if (ch === 'ice') { b.iceB += 0.16 * (weak ? 1.6 : 1); if (b.iceB >= 1) { b.iceB = 0; b.slowT = 4.5; floatText(b.x, b.y - b.r - 40, 'FROZEN!', '#9fe3ff', 22); particles(b.x, b.y, 20, '#cff', 200); } }
+      if (ch === 'spark') particles(hx, hy, 6, '#ffe84a', 300, 0.3, 3);
+    }
+  }
+  if (b.clones) for (const c of b.clones) {
+    if (c.hp > 0 && !P.hitSet.has(c) && hits(c, b.r * 0.8)) {
+      P.hitSet.add(c); c.hp = 0; if (c.line) c.line.dead = true;
+      particles(c.x, c.y, 14, `rgb(${b.auraCol})`, 220, 0.45);
+      floatText(c.x, c.y - b.r, 'poof!', '#ddd', 18); sfx('hit');
+    }
+  }
+  for (const h of F.hz) {
+    if (h.type === 'post' && !h.dead && h.t >= h.warn && !P.hitSet.has(h) && hits(h, h.r + 4)) {
+      P.hitSet.add(h); h.dead = true; particles(h.x, h.y, 12, h.col, 200, 0.4); sfx('hit');
+    }
   }
   for (const m of F.minions) {
     if (!P.hitSet.has(m) && hits(m, m.r)) { P.hitSet.add(m); m.hp = 0; particles(m.x, m.y, 12, '#a33', 200); sfx('hit'); }
@@ -687,19 +964,80 @@ function updateHazards(dt) {
     const live = h.t >= h.warn;
     switch (h.type) {
       case 'circle':
-        if (live && !h.fired) { h.fired = true; for (const t of T) if (dist(t, h) < h.r + t.r * 0.5) hurt(t, h.dmg, h.x, h.y, h.name); if (h.name === 'rain') { sfx('boom'); shake(4); } particles(h.x, h.y, 10, h.col || '#ff6a3a', 200, 0.4); }
+        if (live && !h.fired) {
+          h.fired = true;
+          for (const t of T) if (dist(t, h) < h.r + t.r * 0.5) hurt(t, h.dmg, h.x, h.y, h.name);
+          if (h.name === 'rain' || h.shrap) { sfx('boom'); shake(h.shrap ? 7 : 4); }
+          if (h.shrap) {
+            const a0 = Math.random() * TAU, sp = h.shrapSp || 290;
+            for (let i = 0; i < h.shrap; i++) {
+              const a = a0 + i * TAU / h.shrap;
+              addHaz({ type: 'proj', x: h.x, y: h.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 10, warn: 0, life: 1.7, dmg: h.dmg * 0.65, col: h.col || '#ff8a2a', name: h.name });
+            }
+          }
+          particles(h.x, h.y, 10, h.col || '#ff6a3a', 200, 0.4);
+        }
         if (h.t > h.warn + 0.25) h.dead = true; break;
+      case 'donut':
+        if (live && !h.fired) {
+          h.fired = true; sfx('boom'); shake(12);
+          for (const t of T) {
+            const d = dist(t, h);
+            if (d > h.rIn + t.r * 0.15 && d < h.rOut - t.r * 0.2) hurt(t, h.dmg, h.x, h.y, h.name);
+          }
+          for (let i = 0; i < 16; i++) {
+            const a = i / 16 * TAU, rr = h.rIn + 40 + (i % 3) * 65;
+            particles(h.x + Math.cos(a) * rr, h.y + Math.sin(a) * rr, 2, h.col || '#ff6a3a', 180, 0.45);
+          }
+        }
+        if (h.t > h.warn + 0.28) h.dead = true; break;
       case 'cone':
         if (live && !h.fired) { h.fired = true; sfx('swing');
           for (const t of T) { const d = dist(t, h); if (d < h.range + t.r * 0.5) { const a = Math.atan2(t.y - h.y, t.x - h.x); if (Math.abs(angDiff(h.ang, a)) < h.arc / 2) hurt(t, h.dmg, h.x, h.y, h.name); } } }
         if (h.t > h.warn + 0.18) h.dead = true; break;
-      case 'line': h.eff = rayBlock(h.x, h.y, h.ang, h.len); if (h.t > h.warn) h.dead = true; break;
+      case 'line':
+        h.eff = rayBlock(h.x, h.y, h.ang, h.len);
+        if (h.fireDur) {
+          if (live && !h.fired) {
+            h.fired = true;
+            const x2 = h.x + Math.cos(h.ang) * h.eff, y2 = h.y + Math.sin(h.ang) * h.eff;
+            for (const t of T) if (segDist(t.x, t.y, h.x, h.y, x2, y2) < h.w / 2 + t.r * 0.55) {
+              const sx = h.pull ? h.x + Math.cos(h.ang) * 900 : h.x, sy = h.pull ? h.y + Math.sin(h.ang) * 900 : h.y;
+              hurt(t, h.dmg, sx, sy, h.name, h.pull);
+            }
+          }
+          if (h.t > h.warn + h.fireDur) h.dead = true;
+        } else if (h.t > h.warn) h.dead = true;
+        break;
       case 'proj':
+        if (h.boom) {
+          h.spinA = (h.spinA || 0) + 15 * BDT;
+          if (!h.ret) {
+            const dec = Math.max(0, 1 - 1.55 * BDT); h.vx *= dec; h.vy *= dec;
+            if (h.t >= h.outT) { h.ret = true; h.hit.clear(); sfx('swing'); }
+          } else {
+            const ow = (h.owner && !h.owner.dead) ? h.owner : { x: h.ox, y: h.oy, r: 30 };
+            const a = Math.atan2(ow.y - h.y, ow.x - h.x), rsp = Math.min(h.sp * 1.05, 180 + (h.t - h.outT) * 1100);
+            h.vx = Math.cos(a) * rsp; h.vy = Math.sin(a) * rsp;
+            if (dist(h, ow) < (ow.r || 30) * 0.75) { h.dead = true; break; }
+          }
+        } else if (h.turn && h.t < h.trackT) {
+          const tg = (F.allies.length && dist(h, F.allies[0]) < dist(h, F.p)) ? F.allies[0] : F.p;
+          if (tg && tg.alive) {
+            const ca = Math.atan2(h.vy, h.vx), ta = Math.atan2(tg.y - h.y, tg.x - h.x);
+            const na = ca + clamp(angDiff(ca, ta), -h.turn * BDT, h.turn * BDT);
+            h.vx = Math.cos(na) * h.sp; h.vy = Math.sin(na) * h.sp;
+          }
+        }
         h.x += h.vx * BDT; h.y += h.vy * BDT; h.life -= BDT;
         if (F.objs) for (const o of F.objs) { if ((o.k === 'pillar' && o.hp > 0 && dist(h, o) < o.r + h.r) || (o.k === 'barrel' && o.state !== 'gone' && dist({ x: h.x, y: h.y }, { x: o.x, y: o.y - o.r }) < o.r + h.r)) { h.dead = true; particles(h.x, h.y, 6, h.col, 120, 0.3, 3); } }
         if (h.dead) break;
-        for (const t of T) if (!h.hit.has(t) && dist(t, h) < h.r + t.r * 0.7) { if (hurt(t, h.dmg, h.x - h.vx, h.y - h.vy, h.name)) { h.dead = true; } h.hit.add(t); }
-        if (h.life <= 0 || h.x < -50 || h.x > AW + 50 || h.y < -50 || h.y > AH + 50) h.dead = true; break;
+        for (const t of T) if (!h.hit.has(t) && dist(t, h) < h.r + t.r * 0.7) { if (hurt(t, h.dmg, h.x - h.vx, h.y - h.vy, h.name) && !h.boom) { h.dead = true; } h.hit.add(t); }
+        if (h.life <= 0 || (!h.boom && (h.x < -50 || h.x > AW + 50 || h.y < -50 || h.y > AH + 50)) || h.x < -260 || h.x > AW + 260 || h.y < -260 || h.y > AH + 260) {
+          if (h.turn && h.life <= 0) particles(h.x, h.y, 6, h.col, 120, 0.3, 3);
+          h.dead = true;
+        }
+        break;
       case 'ring':
         h.r += h.v * BDT;
         for (const t of T) if (!h.hit.has(t) && Math.abs(dist(t, h) - h.r) < h.th / 2 + t.r * 0.6) { h.hit.add(t); hurt(t, h.dmg, h.x, h.y, h.name, h.push); }
@@ -719,6 +1057,16 @@ function updateHazards(dt) {
       case 'pool':
         if (live) { for (const t of T) { if (dist(t, h) < h.r) { const n = h.tick[t.isPlayer ? 'p' : 'a'] || 0; if (h.t > n) { h.tick[t.isPlayer ? 'p' : 'a'] = h.t + 0.5; if (t.isPlayer && t.iframes <= 0 && t.inv <= 0) { t.hp -= h.dmg; F.lastHit = 'pool'; floatText(t.x, t.y - 40, '-' + Math.round(h.dmg), '#9f6', 18); sfx('burn'); if (t.hp <= 0) { t.hp = 0; t.alive = false; t.state = 'dead'; F.over = true; F.result = 'lose'; F.overT = 0; sfx('die'); } } else if (!t.isPlayer) hurt(t, h.dmg, h.x, h.y); } } } }
         if (h.t > h.warn + h.life) h.dead = true; break;
+      case 'post':
+        if (live) {
+          for (const t of T) {
+            h.cd = h.cd || new Map();
+            if ((h.cd.get(t) || 0) > h.t) continue;
+            if (dist(t, h) < h.r + t.r * 0.65) { if (hurt(t, h.dmg, h.x, h.y, h.name) || t.iframes > 0) h.cd.set(t, h.t + 0.55); }
+          }
+        }
+        if (h.t > h.warn + h.life || F.b.dead) h.dead = true;
+        break;
     }
   }
   F.hz = F.hz.filter(h => !h.dead);
@@ -801,7 +1149,26 @@ function drawHazards() {
           g.globalAlpha = 0.18 + 0.25 * k; g.fillStyle = red; g.beginPath(); g.arc(h.x, h.y, h.r, 0, TAU); g.fill();
           g.globalAlpha = 0.9; g.strokeStyle = red; g.lineWidth = 3; g.beginPath(); g.arc(h.x, h.y, h.r, 0, TAU); g.stroke();
           g.globalAlpha = 0.5; g.beginPath(); g.arc(h.x, h.y, h.r * k, 0, TAU); g.stroke();
+          if (h.arcFrom) {
+            const px = h.arcFrom.x + (h.x - h.arcFrom.x) * k, py = h.arcFrom.y + (h.y - h.arcFrom.y) * k - Math.sin(k * Math.PI) * 145;
+            g.globalAlpha = 0.95; g.fillStyle = red; g.beginPath(); g.arc(px, py, 15, 0, TAU); g.fill();
+            g.fillStyle = '#fff'; g.beginPath(); g.arc(px - 4, py - 4, 5, 0, TAU); g.fill();
+          }
         } else { g.globalAlpha = 1 - (h.t - h.warn) / 0.25; g.fillStyle = '#ffb060'; g.beginPath(); g.arc(h.x, h.y, h.r, 0, TAU); g.fill(); }
+        break;
+      case 'donut':
+        g.beginPath(); g.arc(h.x, h.y, h.rOut, 0, TAU); g.arc(h.x, h.y, h.rIn, 0, TAU, true);
+        if (!live) {
+          g.globalAlpha = 0.14 + 0.24 * k; g.fillStyle = red; g.fill('evenodd');
+          g.globalAlpha = 0.85; g.strokeStyle = red; g.lineWidth = 3;
+          g.beginPath(); g.arc(h.x, h.y, h.rOut, 0, TAU); g.stroke();
+          g.beginPath(); g.arc(h.x, h.y, h.rIn, 0, TAU); g.stroke();
+          g.globalAlpha = 0.45; g.beginPath(); g.arc(h.x, h.y, h.rIn + (h.rOut - h.rIn) * k, 0, TAU); g.stroke();
+          g.globalAlpha = 0.6; g.strokeStyle = '#7aff9a'; g.setLineDash([10, 8]); g.lineWidth = 3;
+          g.beginPath(); g.arc(h.x, h.y, h.rIn - 6, 0, TAU); g.stroke(); g.setLineDash([]);
+        } else {
+          g.globalAlpha = (1 - (h.t - h.warn) / 0.28) * 0.8; g.fillStyle = '#ffb060'; g.fill('evenodd');
+        }
         break;
       case 'cone':
         g.translate(h.x, h.y); g.rotate(h.ang);
@@ -809,14 +1176,43 @@ function drawHazards() {
         g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, h.range, -h.arc / 2, h.arc / 2); g.closePath(); g.fill();
         if (!live) { g.globalAlpha = 0.8; g.strokeStyle = red; g.lineWidth = 3; g.stroke(); }
         break;
-      case 'line':
-        g.translate(h.x, h.y); g.rotate(h.ang); g.globalAlpha = 0.12 + 0.25 * k; g.fillStyle = red; const L1 = h.eff || h.len;
-        g.fillRect(0, -h.w / 2, L1, h.w); g.globalAlpha = 0.6; g.strokeStyle = red; g.lineWidth = 2; g.strokeRect(0, -h.w / 2, L1, h.w);
-        if (h.eff && h.eff < h.len - 1) { g.globalAlpha = 0.9; g.font = 'bold 30px sans-serif'; g.textAlign = 'center'; g.save(); g.translate(L1, 0); g.rotate(-h.ang); g.fillText('💥', 0, 10); g.restore(); }
+      case 'line': {
+        g.translate(h.x, h.y); g.rotate(h.ang); const L1 = h.eff || h.len;
+        if (!live) {
+          g.globalAlpha = 0.12 + 0.25 * k; g.fillStyle = red; g.fillRect(0, -h.w / 2, L1, h.w);
+          if (h.fireDur) { g.globalAlpha = 0.25; g.fillRect(0, -h.w * k / 2, L1, h.w * k); }
+          g.globalAlpha = 0.65; g.strokeStyle = red; g.lineWidth = 2; g.strokeRect(0, -h.w / 2, L1, h.w);
+          if (!h.fireDur && h.eff && h.eff < h.len - 1) { g.globalAlpha = 0.9; g.font = 'bold 30px sans-serif'; g.textAlign = 'center'; g.save(); g.translate(L1, 0); g.rotate(-h.ang); g.fillText('💥', 0, 10); g.restore(); }
+        } else if (h.fireDur) {
+          const fk = 1 - clamp((h.t - h.warn) / h.fireDur, 0, 1);
+          if (h.rope) {
+            const ext = fk > 0.4 ? 1 : fk / 0.4;
+            g.globalAlpha = 0.95; g.strokeStyle = red; g.lineWidth = 10; g.lineCap = 'round';
+            g.beginPath(); g.moveTo(0, 0); g.lineTo(L1 * ext, 0); g.stroke();
+            g.fillStyle = '#fff'; g.beginPath(); g.arc(L1 * ext, 0, 11, 0, TAU); g.fill();
+          } else {
+            g.globalAlpha = 0.9 * fk; g.fillStyle = red; g.fillRect(0, -h.w / 2, L1, h.w);
+            g.fillStyle = '#fff'; g.globalAlpha = 0.75 * fk; g.fillRect(0, -h.w / 5, L1, h.w * 0.4);
+          }
+        }
         break;
+      }
       case 'proj':
-        g.fillStyle = h.col; g.shadowColor = h.col; g.shadowBlur = 14; g.beginPath(); g.arc(h.x, h.y, h.r, 0, TAU); g.fill();
-        g.shadowBlur = 0; g.fillStyle = 'rgba(255,255,255,0.7)'; g.beginPath(); g.arc(h.x - h.r * 0.3, h.y - h.r * 0.3, h.r * 0.35, 0, TAU); g.fill();
+        if (h.shape === 'blade') {
+          g.translate(h.x, h.y); g.rotate(h.spinA || 0);
+          g.fillStyle = h.col; g.shadowColor = h.col; g.shadowBlur = 10;
+          for (let i = 0; i < 3; i++) { g.rotate(TAU / 3); g.beginPath(); g.moveTo(0, -4); g.quadraticCurveTo(h.r * 0.9, -h.r * 0.7, h.r * 1.25, 0); g.quadraticCurveTo(h.r * 0.6, h.r * 0.35, 0, 4); g.fill(); }
+          g.shadowBlur = 0; g.fillStyle = '#fff'; g.beginPath(); g.arc(0, 0, 4.5, 0, TAU); g.fill();
+        } else if (h.shape === 'wisp') {
+          const va = Math.atan2(h.vy, h.vx);
+          g.globalAlpha = 0.35; g.fillStyle = h.col; g.beginPath(); g.arc(h.x - Math.cos(va) * 10, h.y - Math.sin(va) * 10, h.r * 0.85, 0, TAU); g.fill();
+          g.globalAlpha = 1; g.fillStyle = h.col; g.beginPath(); g.arc(h.x, h.y, h.r, 0, TAU); g.fill();
+          g.fillStyle = '#fff'; g.beginPath(); g.arc(h.x + Math.cos(va) * 4, h.y + Math.sin(va) * 4, h.r * 0.45, 0, TAU); g.fill();
+          g.fillStyle = '#1a0a24'; g.beginPath(); g.arc(h.x + Math.cos(va) * 5.5, h.y + Math.sin(va) * 5.5, h.r * 0.22, 0, TAU); g.fill();
+        } else {
+          g.fillStyle = h.col; g.shadowColor = h.col; g.shadowBlur = 12; g.beginPath(); g.arc(h.x, h.y, h.r, 0, TAU); g.fill();
+          g.shadowBlur = 0; g.fillStyle = 'rgba(255,255,255,0.7)'; g.beginPath(); g.arc(h.x - h.r * 0.3, h.y - h.r * 0.3, h.r * 0.35, 0, TAU); g.fill();
+        }
         break;
       case 'ring':
         g.globalAlpha = h.dmg ? 0.85 : 0.4; g.strokeStyle = h.dmg ? '#ff6a3a' : '#fff'; g.lineWidth = h.th; g.beginPath(); g.arc(h.x, h.y, h.r, 0, TAU); g.stroke();
@@ -840,6 +1236,19 @@ function drawHazards() {
         else { const fade = clamp((h.warn + h.life - h.t) / 0.6, 0, 1); g.globalAlpha = 0.45 * fade; g.fillStyle = h.col; g.beginPath();
           for (let i = 0; i <= 16; i++) { const a = i / 16 * TAU, rr = h.r * (0.9 + 0.1 * Math.sin(a * 3 + h.t * 2)); i ? g.lineTo(h.x + Math.cos(a) * rr, h.y + Math.sin(a) * rr) : g.moveTo(h.x + Math.cos(a) * rr, h.y + Math.sin(a) * rr); }
           g.fill(); g.globalAlpha = 0.6 * fade; g.fillStyle = '#fff'; g.beginPath(); g.arc(h.x + Math.sin(h.t * 3) * h.r * 0.4, h.y + Math.cos(h.t * 2) * h.r * 0.3, 5, 0, TAU); g.fill(); }
+        break;
+      case 'post':
+        if (h.next && !h.next.dead) {
+          g.globalAlpha = live ? 0.35 : 0.2 * k; g.strokeStyle = red; g.lineWidth = 3; g.setLineDash([8, 8]);
+          g.beginPath(); g.moveTo(h.x, h.y); g.lineTo(h.next.x, h.next.y); g.stroke(); g.setLineDash([]);
+        }
+        if (!live) {
+          g.globalAlpha = 0.3 + 0.4 * k; g.strokeStyle = red; g.lineWidth = 3; g.beginPath(); g.arc(h.x, h.y, h.r, 0, TAU); g.stroke();
+        } else {
+          const fade = clamp((h.warn + h.life - h.t) / 0.5, 0, 1);
+          g.globalAlpha = 0.9 * fade; g.fillStyle = red; g.beginPath(); g.arc(h.x, h.y, h.r, 0, TAU); g.fill();
+          g.fillStyle = '#fff'; g.globalAlpha = 0.75 * fade; g.beginPath(); g.arc(h.x, h.y, h.r * 0.45, 0, TAU); g.fill();
+        }
         break;
     }
     g.restore();
@@ -985,6 +1394,40 @@ function drawHUD() {
     g.font = `600 ${72 * s}px Georgia, serif`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#b3201c'; g.shadowColor = '#f00'; g.shadowBlur = 25; g.fillText('YOU DIED', SW / 2, SH / 2); g.restore();
   }
 }
+function drawClone(b, c) {
+  const g = ctx, S = b.r * 3.5, flip = Math.cos(c.face) < -0.2 ? -1 : 1;
+  drawShadow(c.x, c.y, b.r * 0.85, 0.3 * c.alpha);
+  g.save();
+  g.globalAlpha = 0.58 * c.alpha;
+  g.translate(c.x + (b.wind > 0 ? Math.sin(F.time * 45) * 3 : 0), c.y + Math.sin(F.time * 6 + c.x) * 5);
+  g.scale(flip, 1);
+  if (b.glowImg) { g.globalAlpha = 0.45 * c.alpha; g.drawImage(b.glowImg, -S * 0.6, -S * 0.85, S * 1.2, S * 1.2); g.globalAlpha = 0.58 * c.alpha; }
+  if (b.img.complete && b.img.naturalWidth) g.drawImage(b.img, -S / 2, -S * 0.6, S, S);
+  g.restore();
+  if (b.sparkT > 0) {
+    const k = b.sparkT / 0.32, sx = c.x + Math.cos(c.face) * b.r * 0.4, sy = c.y - b.r * 0.9;
+    g.save(); g.translate(sx, sy); g.rotate(k * 2); const s = 24 + (1 - k) * 20; g.globalAlpha = 0.85 * k;
+    g.fillStyle = '#fff'; g.beginPath(); for (let i = 0; i < 8; i++) { const r = i % 2 ? s * 0.18 : s, a = i * Math.PI / 4; g.lineTo(Math.cos(a) * r, Math.sin(a) * r); } g.closePath(); g.fill();
+    g.restore();
+  }
+}
+function drawGuard(b) {
+  if (!b.guard || b.dead) return;
+  const g = ctx, col = b.guardCol || '#ffd84a', R = b.r * 1.22, cy = b.y - b.r * 0.35 - b.air;
+  g.save(); g.translate(b.x, cy);
+  g.globalAlpha = 0.25 + 0.12 * Math.sin(F.time * 16); g.fillStyle = col; g.beginPath(); g.arc(0, 0, R, 0, TAU); g.fill();
+  g.globalAlpha = 0.9; g.strokeStyle = col; g.lineWidth = 4; g.beginPath(); g.arc(0, 0, R, 0, TAU); g.stroke();
+  g.fillStyle = '#fff';
+  for (let i = 0; i < 10; i++) {
+    const a = F.time * 3.5 + i * TAU / 10;
+    g.beginPath();
+    g.moveTo(Math.cos(a - 0.12) * R, Math.sin(a - 0.12) * R);
+    g.lineTo(Math.cos(a) * (R + 18), Math.sin(a) * (R + 18));
+    g.lineTo(Math.cos(a + 0.12) * R, Math.sin(a + 0.12) * R);
+    g.closePath(); g.fill();
+  }
+  g.restore();
+}
 function render() {
   const g = ctx;
   g.setTransform(DPR, 0, 0, DPR, 0, 0); g.clearRect(0, 0, SW, SH);
@@ -994,7 +1437,8 @@ function render() {
   drawArena();
   drawHazards();
   // depth sort
-  const ents = [{ y: F.b.y + F.b.r * 0.5, d: () => drawBossFancy(F.b) }, { y: F.p.y, d: () => drawPlayer(F.p) }];
+  const ents = [{ y: F.b.y + F.b.r * 0.5, d: () => { drawBossFancy(F.b); drawGuard(F.b); } }, { y: F.p.y, d: () => drawPlayer(F.p) }];
+  if (F.b.clones) for (const c of F.b.clones) ents.push({ y: c.y + F.b.r * 0.5, d: () => drawClone(F.b, c) });
   for (const o of F.objs) if (o.k !== 'mud') ents.push({ y: o.k === 'drop' ? o.ly : o.y, d: () => drawObj(o) });
   ents.sort((a, b) => a.y - b.y);
   drawMinions();

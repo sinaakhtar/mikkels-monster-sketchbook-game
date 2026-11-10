@@ -20,9 +20,9 @@ function bossUnlocked(b) { if (!regionUnlocked(b.region)) return false; if (b.bo
 function tipFor(f) {
   const k = f.lastHit, objs = f.objs || [];
   const has = kind => objs.some(o => o.k === kind && (o.k !== 'pillar' || o.hp > 0));
-  if ((k === 'charge' || k === 'grab') && objs.some(o => o.k === 'pillar')) return TIPS[k] + ' Even better: stand in front of a pillar and roll away at the last second — it will CRASH!';
+  if ((k === 'charge' || k === 'grab' || k === 'clones') && objs.some(o => o.k === 'pillar')) return TIPS[k] + ' Even better: stand in front of a pillar and roll away at the last second — it will CRASH!';
   if (k === 'inhale' && has('barrel')) return TIPS.inhale + ' Or hit a barrel while it\'s sucking… it\'ll swallow it! 💥';
-  if ((k === 'beam' || k === 'spray') && objs.some(o => o.k === 'pillar')) return TIPS[k] + ' Hide behind a pillar — it blocks shots and beams!';
+  if (['beam', 'spray', 'wavewall', 'spiral', 'homing', 'boomerang', 'cross', 'fissure', 'lash'].includes(k) && objs.some(o => o.k === 'pillar')) return TIPS[k] + ' Hide behind a pillar — it blocks shots and beams!';
   if (k === 'slam' && has('drop')) return TIPS.slam + ' Try dropping the hanging thing on it while it stands in the shadow!';
   return TIPS[k] || TIPS.default;
 }
