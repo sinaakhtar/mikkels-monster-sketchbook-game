@@ -198,53 +198,76 @@ function spark(b) { b.sparkT = 0.32; b.sparked = true; sfx('spark'); }
 function stepToward(e, t, sp) { const a = Math.atan2(t.y - e.y, t.x - e.x); e.x += Math.cos(a) * sp * BDT; e.y += Math.sin(a) * sp * BDT; clampE(e); }
 
 // ---------------- MOVES (generators, one yield per frame) ----------------
+function triggerStrike(b, kind, dur = 0.34, side = 0) {
+  b.strikeT = dur; b.strikeDur = dur; b.strikeKind = kind || b.moveKind || 'swipe';
+  b.strikeSide = side; b.strikeAng = b.face; b.punch = Math.max(b.punch || 0, dur);
+}
 function* W(s) { let t = 0; while (t < s) { t += BDT; yield; } }
-function* waitSpark(b, T, track = true) {
-  let t = 0; b.wind = T;
+function* waitSpark(b, T, track = true, kind = 'cast') {
+  let t = 0; b.wind = T; b.windP = 0; b.moveKind = kind;
   if (T < 0.3) spark(b);
-  while (t < T) { t += BDT; if (track && t < T * 0.8) faceTo(b, tgt(b)); if (!b.sparked && T - t < 0.26) spark(b); yield; }
-  b.sparked = false; b.wind = 0;
+  while (t < T) {
+    t += BDT; b.windP = clamp(t / Math.max(T, 0.01), 0, 1);
+    if (track && t < T * 0.8) faceTo(b, tgt(b));
+    if (!b.sparked && T - t < 0.26) spark(b);
+    yield;
+  }
+  b.sparked = false; b.wind = 0; b.windP = 0;
 }
 const MOVES = {};
 MOVES.swipe = function* (b, o) {
   const n = o.n || 1, range = b.r + (o.range || 110), arc = (o.arc || 115) * RAD;
+  b.moveKind = 'swipe'; b.swingMax = n;
   for (let i = 0; i < n; i++) {
+    b.swingIdx = i;
+    const side = (n > 1 && i === n - 1) ? 0 : (i % 2 === 0 ? 1 : -1); // 1 = front/R lead, -1 = back/L lead, 0 = both overhead
+    b.swingSide = side;
     let T = tele(b, i === 0 ? (o.firstT || 0.6) : 0.36);
     if (o.delay && i > 0 && Math.random() < 0.45) T += 0.5;   // delayed swing — don't roll too early!
     const h = addHaz({ type: 'cone', x: b.x, y: b.y, ang: b.face, range, arc, warn: T, dmg: dmgOf(b, o.dmg || 22), name: 'swipe' });
-    let t = 0; b.wind = T;
+    let t = 0; b.wind = T; b.windP = 0;
     while (t < T) {
-      t += BDT; const g = tgt(b);
+      t += BDT; b.windP = clamp(t / Math.max(T, 0.01), 0, 1);
+      const g = tgt(b);
       if (t < T * 0.7) { faceTo(b, g); if (dist(b, g) > range * 0.6) stepToward(b, g, b.speed * 0.6); }
       h.x = b.x; h.y = b.y; h.ang = b.face;
       if (!b.sparked && T - t < 0.26) spark(b);
       yield;
     }
-    b.sparked = false; b.wind = 0;
-    b.x += Math.cos(b.face) * 30; b.y += Math.sin(b.face) * 30; clampE(b);
-    yield* W(0.12);
+    b.sparked = false; b.wind = 0; b.windP = 0;
+    b.strikeRange = range; b.strikeArc = arc;
+    triggerStrike(b, 'swipe', i === n - 1 ? 0.38 : 0.30, side);
+    b.x += Math.cos(b.face) * 34; b.y += Math.sin(b.face) * 34; clampE(b);
+    yield* W(0.18);
   }
   yield* W(o.rec || 0.75);
 };
 MOVES.charge = function* (b, o) {
   const n = o.n || 1;
+  b.moveKind = 'charge';
   for (let i = 0; i < n; i++) {
     faceTo(b, tgt(b)); const T = tele(b, i === 0 ? 0.8 : 0.5);
     const h = addHaz({ type: 'line', x: b.x, y: b.y, ang: b.face, len: 1500, w: b.r * 1.7, warn: T, dmg: 0, name: 'charge' });
-    let t = 0; b.wind = T;
-    while (t < T) { t += BDT; if (t < T * 0.65) faceTo(b, tgt(b)); h.x = b.x; h.y = b.y; h.ang = b.face; if (!b.sparked && T - t < 0.26) spark(b); yield; }
-    b.sparked = false; b.wind = 0; h.dead = true;
+    let t = 0; b.wind = T; b.windP = 0;
+    while (t < T) {
+      t += BDT; b.windP = clamp(t / Math.max(T, 0.01), 0, 1);
+      if (t < T * 0.65) faceTo(b, tgt(b));
+      h.x = b.x; h.y = b.y; h.ang = b.face;
+      if (!b.sparked && T - t < 0.26) spark(b);
+      yield;
+    }
+    b.sparked = false; b.wind = 0; b.windP = 0; h.dead = true;
     { const g0 = tgt(b), dg = dist(b, g0); if (rayBlock(b.x, b.y, b.face, dg) < dg - 10) { yield* W(0.35); continue; } }   // path blocked — don't charge into it
-    b.contact = dmgOf(b, o.dmg || 26); b.contactName = 'charge'; sfx('dash');
+    b.contact = dmgOf(b, o.dmg || 26); b.contactName = 'charge'; b.dashing = 'charge'; triggerStrike(b, 'charge', 0.35, 0); sfx('dash');
     let d = 0; const sp = o.speed || 950;
     while (d < (o.dist || 950)) {
       const s = sp * BDT; b.x += Math.cos(b.face) * s; b.y += Math.sin(b.face) * s; d += s;
-      const ph = pillarHitBy(b); if (ph) { crash(b, ph); return; }
+      const ph = pillarHitBy(b); if (ph) { b.dashing = null; crash(b, ph); return; }
       if (Math.random() < 0.5) F.fx.push({ x: b.x + rand(-20, 20), y: b.y + rand(-20, 20), vx: 0, vy: 0, life: 0.4, t: 0, col: 'rgba(200,180,150,0.6)', size: 12 });
       if (hitWall(b)) { shake(8); dust(b.x, b.y, 12); break; }
       yield;
     }
-    b.contact = 0;
+    b.contact = 0; b.dashing = null;
     yield* W(i === n - 1 ? (o.rec || 0.9) : 0.25);
   }
 };
@@ -252,25 +275,27 @@ MOVES.slam = function* (b, o) {
   const g = tgt(b), T = tele(b, o.T || 1.0), R = b.r + (o.R || 75);
   let lx = g.x, ly = g.y; const sx = b.x, sy = b.y;
   const h = addHaz({ type: 'circle', x: lx, y: ly, r: R, warn: T, dmg: dmgOf(b, o.dmg || 30), name: 'slam', shadow: true });
-  let t = 0; b.wind = T; sfx('dash');
+  let t = 0; b.wind = T; b.windP = 0; b.moveKind = 'slam'; sfx('dash');
   while (t < T) {
-    t += BDT; const k = t / T;
+    t += BDT; const k = t / T; b.windP = clamp(k, 0, 1);
     if (k < 0.55) { const g2 = tgt(b); lx += (g2.x - lx) * Math.min(1, BDT * 2.2); ly += (g2.y - ly) * Math.min(1, BDT * 2.2); lx = clamp(lx, b.r, AW - b.r); ly = clamp(ly, b.r, AH - b.r); h.x = lx; h.y = ly; }
     b.x = sx + (lx - sx) * ease(k); b.y = sy + (ly - sy) * ease(k); b.air = Math.sin(k * Math.PI) * 170;
     if (!b.sparked && T - t < 0.26) spark(b);
     yield;
   }
-  b.sparked = false; b.wind = 0; b.air = 0; b.x = lx; b.y = ly; clampE(b);
+  b.sparked = false; b.wind = 0; b.windP = 0; b.air = 0; b.x = lx; b.y = ly; clampE(b);
+  b.strikeRange = R; triggerStrike(b, 'slam', 0.42, 0);
   shake(14); sfx('slam'); dust(b.x, b.y, 26); breakPillarsNear(b.x, b.y, R * 0.55);
   if (o.ring) addHaz({ type: 'ring', x: b.x, y: b.y, r: R * 0.7, v: 420, rmax: 1500, th: 26, warn: 0, dmg: dmgOf(b, 16), name: 'ring' });
   yield* W(o.rec || 1.0);
 };
 MOVES.slam3 = function* (b, o) { for (let i = 0; i < 3; i++) yield* MOVES.slam(b, { R: 90, T: i ? 0.75 : 1.0, rec: i < 2 ? 0.15 : 1.3, ring: i === 2 }); };
 MOVES.spray = function* (b, o) {
-  yield* waitSpark(b, tele(b, o.T || 0.6));
+  yield* waitSpark(b, tele(b, o.T || 0.6), true, 'spray');
   const waves = o.waves || 1, n = o.n || 5, spread = (o.spread || 60) * RAD;
   for (let w = 0; w < waves; w++) {
     faceTo(b, tgt(b)); const off = (w % 2) ? spread / Math.max(1, n - 1) / 2 : 0;
+    triggerStrike(b, 'spray', 0.30, w % 2 === 0 ? 1 : -1);
     for (let i = 0; i < n; i++) {
       const a = b.face - spread / 2 + (n === 1 ? spread / 2 : spread * i / (n - 1)) + off, sp = o.sp || 380;
       addHaz({ type: 'proj', x: b.x + Math.cos(a) * b.r * 0.7, y: b.y + Math.sin(a) * b.r * 0.7, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: o.pr || 13, warn: 0, life: 4, dmg: dmgOf(b, o.dmg || 14), col: o.col || '#ff5a3c', name: 'spray' });
@@ -280,16 +305,18 @@ MOVES.spray = function* (b, o) {
   yield* W(o.rec || 0.6);
 };
 MOVES.ring = function* (b, o) {
-  yield* waitSpark(b, tele(b, o.T || 0.8), false);
+  yield* waitSpark(b, tele(b, o.T || 0.8), false, 'ring');
   for (let i = 0; i < (o.n || 1); i++) {
+    triggerStrike(b, 'ring', 0.36, 0);
     addHaz({ type: 'ring', x: b.x, y: b.y, r: b.r * 0.8, v: o.v || 360, rmax: 1500, th: 28, warn: 0, dmg: dmgOf(b, o.dmg || 18), name: 'ring' });
     shake(6); sfx('boom'); yield* W(o.gap || 0.6);
   }
   yield* W(o.rec || 0.7);
 };
 MOVES.rain = function* (b, o) {
-  yield* waitSpark(b, tele(b, 0.5), false);
+  yield* waitSpark(b, tele(b, 0.5), false, 'rain');
   for (let i = 0; i < (o.n || 6); i++) {
+    triggerStrike(b, 'rain', 0.25, i % 2 === 0 ? 1 : -1);
     const g = tgt(b), a = Math.random() * TAU, d = i === 0 ? 0 : rand(40, 180);
     addHaz({ type: 'circle', x: clamp(g.x + Math.cos(a) * d, 0, AW), y: clamp(g.y + Math.sin(a) * d, 0, AH), r: o.R || 68, warn: tele(b, o.w || 1.0), dmg: dmgOf(b, o.dmg || 20), name: 'rain', col: o.col });
     yield* W(o.gap || 0.2);
@@ -298,7 +325,8 @@ MOVES.rain = function* (b, o) {
 };
 MOVES.minions = function* (b, o) {
   if (F.minions.length >= 4) { yield* W(0.1); return; }
-  yield* waitSpark(b, tele(b, 0.6), false);
+  yield* waitSpark(b, tele(b, 0.6), false, 'minions');
+  triggerStrike(b, 'minions', 0.38, 0);
   for (let i = 0; i < (o.n || 2); i++) {
     const a = Math.random() * TAU;
     F.minions.push({ x: clamp(b.x + Math.cos(a) * (b.r + 30), 20, AW - 20), y: clamp(b.y + Math.sin(a) * (b.r + 30), 20, AH - 20), r: 18, hp: 1, img: b.img, spawn: 0, t: Math.random() * 5, cd: 0 });
@@ -321,7 +349,9 @@ MOVES.teleport = function* (b, o) {
       if (!b.sparked && T - tt < 0.26) { b.sparkT = 0.32; b.sparked = true; sfx('spark'); b.x = h.x; b.y = h.y; }
       yield;
     }
-    b.sparked = false; b.x = h.x; b.y = h.y; clampE(b); b.alpha = 1; b.ghost = false; shake(12); sfx('slam'); dust(b.x, b.y, 24);
+    b.sparked = false; b.x = h.x; b.y = h.y; clampE(b); b.alpha = 1; b.ghost = false;
+    b.strikeRange = b.r + 50; triggerStrike(b, 'slam', 0.40, 0);
+    shake(12); sfx('slam'); dust(b.x, b.y, 24);
     yield* W(o.rec || 1.0); return;
   }
   const a = (g.isPlayer ? g.face + Math.PI : Math.random() * TAU) + rand(-0.5, 0.5);
@@ -334,30 +364,35 @@ MOVES.burrow3 = function* (b) { for (let i = 0; i < 3; i++) yield* MOVES.telepor
 MOVES.beam = function* (b, o) {
   faceTo(b, tgt(b));
   const sweep = (o.sweep || 140) * RAD * (Math.random() < 0.5 ? 1 : -1), a0 = b.face - sweep / 2, T = tele(b, o.T || 0.95);
-  addHaz({ type: 'beam', x: b.x, y: b.y, ang: a0, len: 1600, w: o.w || 34, warn: T, dur: o.dur || 1.4, sweep, dmg: dmgOf(b, o.dmg || 20), name: 'beam', col: o.col || '#ff3b2f', owner: b });
+  const h1 = addHaz({ type: 'beam', x: b.x, y: b.y, ang: a0, len: 1600, w: o.w || 34, warn: T, dur: o.dur || 1.4, sweep, dmg: dmgOf(b, o.dmg || 20), name: 'beam', col: o.col || '#ff3b2f', owner: b });
   if (o.double) addHaz({ type: 'beam', x: b.x, y: b.y, ang: a0 + Math.PI, len: 1600, w: o.w || 34, warn: T, dur: o.dur || 1.4, sweep, dmg: dmgOf(b, o.dmg || 20), name: 'beam', col: o.col || '#ff3b2f', owner: b });
-  yield* waitSpark(b, T, false);
-  yield* W(o.dur || 1.4); yield* W(o.rec || 0.7);
+  yield* waitSpark(b, T, false, 'beam');
+  b.beaming = o.dur || 1.4; triggerStrike(b, 'beam', 0.35, 0);
+  let bt = 0, bdur = o.dur || 1.4;
+  while (bt < bdur) { bt += BDT; b.beaming = bdur - bt; if (h1 && h1.cur != null) b.face = h1.cur; yield; }
+  b.beaming = 0;
+  yield* W(o.rec || 0.7);
 };
 MOVES.beam2 = function* (b, o) { yield* MOVES.beam(b, { ...o, double: true, sweep: 200, dur: 2.0 }); };
 MOVES.pool = function* (b, o) {
-  yield* waitSpark(b, tele(b, 0.5));
+  yield* waitSpark(b, tele(b, 0.5), true, 'pool');
   for (let i = 0; i < (o.n || 3); i++) {
     const g = tgt(b);
+    triggerStrike(b, 'spray', 0.26, i % 2 === 0 ? 1 : -1);
     addHaz({ type: 'pool', x: clamp(g.x + rand(-130, 130), 40, AW - 40), y: clamp(g.y + rand(-130, 130), 40, AH - 40), r: o.R || 72, warn: 0.75, life: o.life || 6, dmg: dmgOf(b, o.dmg || 7), name: 'pool', col: o.col || '#7bd13a', tick: {} , sx: b.x, sy: b.y });
     sfx('shoot'); yield* W(0.2);
   }
   yield* W(o.rec || 0.6);
 };
 MOVES.grab = function* (b, o) {
-  yield* waitSpark(b, tele(b, o.T || 0.4));
+  yield* waitSpark(b, tele(b, o.T || 0.4), true, 'grab');
   { const g0 = tgt(b), dg = Math.min(dist(b, g0), o.dist || 270); if (rayBlock(b.x, b.y, b.face, dg) < dg - 10) { yield* W(0.4); return; } }
-  b.contact = dmgOf(b, o.dmg || 30); b.contactName = 'grab'; sfx('dash');
-  let d = 0; while (d < (o.dist || 270)) { const s = 1150 * BDT; b.x += Math.cos(b.face) * s; b.y += Math.sin(b.face) * s; d += s; const ph = pillarHitBy(b); if (ph) { crash(b, ph); return; } if (hitWall(b)) break; yield; }
-  b.contact = 0; yield* W(o.rec || 0.95);
+  b.contact = dmgOf(b, o.dmg || 30); b.contactName = 'grab'; b.dashing = 'grab'; triggerStrike(b, 'grab', 0.38, 0); sfx('dash');
+  let d = 0; while (d < (o.dist || 270)) { const s = 1150 * BDT; b.x += Math.cos(b.face) * s; b.y += Math.sin(b.face) * s; d += s; const ph = pillarHitBy(b); if (ph) { b.dashing = null; crash(b, ph); return; } if (hitWall(b)) break; yield; }
+  b.contact = 0; b.dashing = null; triggerStrike(b, 'swipe', 0.32, 0); yield* W(o.rec || 0.95);
 };
 MOVES.inhale = function* (b, o) {
-  yield* W(tele(b, 0.4)); b.inhale = 1; sfx('inhale');
+  yield* W(tele(b, 0.4)); b.inhale = 1; b.moveKind = 'inhale'; sfx('inhale');
   let t = 0;
   while (t < (o.dur || 1.8)) {
     t += BDT; const p = F.p, a = Math.atan2(b.y - p.y, b.x - p.x);
@@ -369,11 +404,16 @@ MOVES.inhale = function* (b, o) {
   b.inhale = 0;
   const T = tele(b, 0.42);
   addHaz({ type: 'circle', x: b.x + Math.cos(b.face) * b.r * 0.7, y: b.y + Math.sin(b.face) * b.r * 0.7, r: b.r + 85, warn: T, dmg: dmgOf(b, o.dmg || 34), name: 'inhale' });
-  spark(b); yield* W(T); b.sparked = false; sfx('chomp'); shake(10);
+  spark(b);
+  let ct = 0; b.wind = T; b.windP = 0;
+  while (ct < T) { ct += BDT; b.windP = clamp(ct / Math.max(T, 0.01), 0, 1); yield; }
+  b.wind = 0; b.windP = 0; b.sparked = false;
+  b.strikeRange = b.r + 85; triggerStrike(b, 'chomp', 0.40, 0);
+  sfx('chomp'); shake(10);
   yield* W(o.rec || 1.1);
 };
 MOVES.spin = function* (b, o) {
-  yield* waitSpark(b, tele(b, 0.85));
+  yield* waitSpark(b, tele(b, 0.85), true, 'spin');
   b.contact = dmgOf(b, o.dmg || 24); b.contactName = 'spin'; b.spin = 1; sfx('dash');
   let ang = b.face, t = 0, retarget = 0;
   while (t < (o.dur || 2.6)) {
@@ -389,10 +429,10 @@ MOVES.spin = function* (b, o) {
   b.contact = 0; b.spin = 0; yield* W(o.rec || 1.3);
 };
 function* ROAR(b) {
-  b.wind = 1.2; banner(b.name + ' is ANGRY!', '#ff5a44', 'It got faster…'); sfx('roar'); bossVoice(b, 'rage');
+  b.wind = 1.2; b.moveKind = 'roar'; banner(b.name + ' is ANGRY!', '#ff5a44', 'It got faster…'); sfx('roar'); bossVoice(b, 'rage');
   let t = 0, done = false;
-  while (t < 1.4) { t += BDT; b.roar = t; if (t > 0.5 && !done) { done = true; addHaz({ type: 'ring', x: b.x, y: b.y, r: b.r, v: 800, rmax: 1500, th: 40, warn: 0, dmg: 0, push: 700, name: 'roar' }); shake(16); } yield; }
-  b.roar = 0; b.wind = 0;
+  while (t < 1.4) { t += BDT; b.roar = t; b.windP = clamp(t / 0.5, 0, 1); if (t > 0.5 && !done) { done = true; triggerStrike(b, 'roar', 0.55, 0); addHaz({ type: 'ring', x: b.x, y: b.y, r: b.r, v: 800, rmax: 1500, th: 40, warn: 0, dmg: 0, push: 700, name: 'roar' }); shake(16); } yield; }
+  b.roar = 0; b.wind = 0; b.windP = 0;
 }
 
 // ---------------- BOSS AI ----------------
@@ -414,6 +454,10 @@ function pickMove(b) {
 function updateBoss(b, dt) {
   BDT = dt * (b.slowT > 0 ? 0.55 : 1) * (inMud(b) && b.air < 40 ? 0.6 : 1);
   b.bob += dt; b.flash = Math.max(0, b.flash - dt); b.sparkT = Math.max(0, b.sparkT - dt);
+  if (b.gen && !b.dead && b.intro <= 0 && b.stagger <= 0) {
+    const r = b.gen.next();
+    if (r.done) { b.gen = null; b.wind = 0; b.windP = 0; b.contact = 0; b.dashing = null; b.beaming = 0; b.sparked = false; }
+  }
   updateBossAnim(b, dt);
   if (b.intro > 0 && !b.dead) return;
   if (b.dead) { b.deadT += dt; if (Math.random() < 0.6) particles(b.x + rand(-b.r, b.r), b.y + rand(-b.r, b.r), 2, '#d8c27a', 200, 0.8, 6); return; }
@@ -448,7 +492,6 @@ function updateBoss(b, dt) {
       b.idle = rand(0.45, 1.0) * (b.p2 ? 0.7 : 1) * diff().idle;
     }
   }
-  if (b.gen) { const r = b.gen.next(); if (r.done) { b.gen = null; b.wind = 0; b.contact = 0; b.sparked = false; } }
 }
 function damageBoss(b, d, poise, col, quiet) {
   if (b.dead) return;
@@ -460,14 +503,14 @@ function damageBoss(b, d, poise, col, quiet) {
     if (b.poise >= b.poiseMax && b.stagger <= 0 && b.hp > 0) staggerBoss(b, 2.6, 'STAGGERED!', 'Hit it now — extra damage!');
   }
   if (b.hp <= 0) {
-    b.hp = 0; b.dead = true; b.gen = null; b.contact = 0; b.air = 0; b.alpha = 1;
+    b.hp = 0; b.dead = true; b.gen = null; b.contact = 0; b.air = 0; b.alpha = 1; b.dashing = null; b.beaming = 0;
     F.hz.length = 0; F.minions.forEach(m => particles(m.x, m.y, 10, '#a33')); F.minions.length = 0;
     banner('MONSTER FELLED', '#f2d27a', b.name); sfx('win'); shake(20); F.over = true; F.result = 'win'; F.overT = 0;
     bossVoice(b, 'death'); musicStop(); b.stagger = 0;
   }
 }
 function staggerBoss(b, dur, text, sub) {
-  b.stagger = dur; b.gen = null; b.contact = 0; b.air = 0; b.alpha = 1; b.ghost = false; b.inhale = 0; b.spin = 0; b.wind = 0; b.poise = b.poiseMax;
+  b.stagger = dur; b.gen = null; b.contact = 0; b.air = 0; b.alpha = 1; b.ghost = false; b.inhale = 0; b.spin = 0; b.wind = 0; b.windP = 0; b.dashing = null; b.beaming = 0; b.poise = b.poiseMax;
   b.sparked = false; banner(text, '#ffd84a', sub); sfx('stagger'); shake(10);
 }
 
