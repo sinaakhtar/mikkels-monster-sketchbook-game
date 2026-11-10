@@ -17,7 +17,16 @@ let cvs, ctx, DPR = 1, SW = 0, SH = 0, SC = 1, OX = 0, OY = 0;
 let F = null;          // current fight
 let BDT = 0;           // boss-time delta (slowed by ice)
 const IMG = {};
-function img(src) { if (!IMG[src]) { const i = new Image(); i.src = src; IMG[src] = i; } return IMG[src]; }
+function img(src) {
+  if (!IMG[src]) {
+    const i = new Image();
+    i.setAttribute('data-path', src);
+    i.onerror = function() { if (window.imgErr) window.imgErr(this); };
+    i.src = typeof assetUrl === 'function' ? assetUrl(src) : src;
+    IMG[src] = i;
+  }
+  return IMG[src];
+}
 
 // ---------------- AUDIO (synthesised, no files) ----------------
 let AC = null;

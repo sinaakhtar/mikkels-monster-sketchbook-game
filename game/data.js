@@ -5,13 +5,80 @@ const GIFT_FROM = 'your uncle';
 const MINORS_TO_UNLOCK_BOSS = 4;
 
 const REGIONS = [
-  { name: 'The Dark Dungeon', short: 'Dungeon' },
-  { name: 'The Haunted Toybox', short: 'Toybox' },
-  { name: 'The Rotten Swamp', short: 'Swamp' },
-  { name: 'The Moonlit Forest', short: 'Forest' },
-  { name: 'The Tentacle Depths', short: 'Depths' },
-  { name: 'The Nightmare Halls', short: 'Nightmare' },
+  { name: 'Sentrum & Akershus — The Dark Dungeon', short: '🏰 Akershus', map: 'a/oslo_0.jpg', sub: 'Pipervika, Rådhuset, Karl Johans gate & Akershus Festning' },
+  { name: 'Vigelandsparken & Frogner — Haunted Toybox', short: '🗿 Frogner', map: 'a/oslo_1.jpg', sub: 'Frognerparken, Sinnataggen, Monolitten & Majorstuen' },
+  { name: 'Akerselva & Grünerløkka — Rotten Swamp', short: '🧪 Grünerløkka', map: 'a/oslo_2.jpg', sub: 'Winding Akerselva, Olaf Ryes plass & Botanisk Hage' },
+  { name: 'Holmenkollen & Nordmarka — Moonlit Forest', short: '🌲 Holmenkollen', map: 'a/oslo_3.jpg', sub: 'Holmenkollbakken, Tryvannstårnet, Sognsvann & Nordmarka' },
+  { name: 'Oslofjorden & Bjørvika — Tentacle Depths', short: '🐙 Oslofjorden', map: 'a/oslo_4.jpg', sub: 'Operahuset, Aker Brygge, Hovedøya & The Fjord Maelstrom' },
+  { name: 'Slottet & Ekeberg — The Nightmare Halls', short: '👁️ Ekeberg', map: 'a/oslo_5.jpg', sub: 'Det kongelige slott, Nationaltheatret & Ekeberg Scream Vortex' },
 ];
+
+// [x%, y%, Oslo landmark name] on each region's 16:9 illustrated Oslo map
+const OSLO_SPOTS = {
+  // Region 0: Akershus & Sentrum
+  m27: [13, 78, 'Pipervika Harbor'],
+  m28: [33, 76, 'Akershus Brygge'],
+  m29: [60, 68, 'Rådhuset'],
+  m34: [47, 52, 'Kontraskjæret'],
+  n22: [16, 30, 'Vippetangen'],
+  n24: [42, 23, 'Torggata'],
+  n10: [78, 56, 'Kvadraturen'],
+  h6:  [67, 25, 'Stortinget'],
+  m30: [28, 48, 'Akershus Festning'],
+
+  // Region 1: Vigelandsparken & Frogner
+  m36: [15, 77, 'Frogner Hovedporten'],
+  m32: [33, 69, 'Frognerdammen'],
+  m33: [31, 43, 'Sinnataggen Bridge'],
+  m38: [44, 52, 'Vigeland Fountain'],
+  n2:  [17, 48, 'Frogneralleen'],
+  h2:  [53, 76, 'Frogner Hovedgård'],
+  h12: [43, 22, 'Bogstadveien'],
+  n6:  [64, 18, 'Majorstuen'],
+  h9:  [80, 44, 'Kirkeveien'],
+  m31: [61, 48, 'Monolitten'],
+
+  // Region 2: Akerselva & Grünerløkka
+  m37: [17, 50, 'Ankerbrua'],
+  m40: [37, 74, 'Nedre Akerselva'],
+  m42: [57, 79, 'Nybrua'],
+  m41: [45, 46, 'Olaf Ryes Plass'],
+  n7:  [82, 56, 'Botanisk Hage (Tøyen)'],
+  h8:  [62, 26, 'Sofienbergparken'],
+  n25: [22, 22, 'Mølla Waterfall'],
+
+  // Region 3: Holmenkollen & Nordmarka
+  n1:  [15, 43, 'Fossumveien'],
+  h0:  [38, 52, 'Tryvannstårnet'],
+  h4:  [44, 77, 'Frognerseteren'],
+  h7:  [58, 55, 'Nordmarka Woods'],
+  h14: [73, 36, 'Sognsvann'],
+  h10: [82, 73, 'Skjennungstua'],
+  n9:  [22, 69, 'Holmenkollbakken'],
+
+  // Region 4: Oslofjorden & Bjørvika
+  n15: [38, 17, 'Aker Brygge'],
+  n16: [28, 39, 'Tjuvholmen'],
+  n17: [66, 28, 'Operahuset (Bjørvika)'],
+  n18: [16, 58, 'Bygdøy Sound'],
+  n20: [86, 58, 'Munchmuseet'],
+  h11: [42, 72, 'Hovedøya'],
+  h13: [70, 74, 'Gressholmen'],
+  n8:  [56, 54, 'Oslofjorden Maelstrom'],
+
+  // Region 5: Slottet & Ekeberg
+  n3:  [16, 46, 'Slottsparken'],
+  n5:  [35, 45, 'Karl Johans Gate'],
+  n11: [48, 41, 'Nationaltheatret'],
+  n12: [22, 68, 'Solli Plass'],
+  n13: [39, 73, 'Pipervika Kai'],
+  n14: [52, 62, 'Jernbanetorget'],
+  n21: [62, 39, 'Sørenga Bridge'],
+  n23: [68, 66, 'Gamlebyen Cliffs'],
+  h5:  [78, 46, 'Ekebergparken'],
+  n0:  [21, 22, 'Det Kongelige Slott'],
+  m39: [83, 18, 'Ekeberg Scream Vortex'],
+};
 
 const ELEM = { fire: '🔥', ice: '❄️', spark: '⚡' };
 

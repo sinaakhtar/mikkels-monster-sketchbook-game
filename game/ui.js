@@ -26,11 +26,28 @@ function tipFor(f) {
   if (k === 'slam' && has('drop')) return TIPS.slam + ' Try dropping the hanging thing on it while it stands in the shadow!';
   return TIPS[k] || TIPS.default;
 }
+const AURL = p => (typeof assetUrl === 'function' ? assetUrl(p) : p);
+function simg(p, alt = '', cls = 'cpic') {
+  const safeAlt = String(alt || '').replace(/"/g, '&quot;');
+  return `<img class="${cls}" src="${AURL(p)}" data-path="${p}" onerror="window.imgErr&&window.imgErr(this)" alt="${safeAlt}">`;
+}
 const UI = {
   region: 0,
+  gridMode: false,
   init() {
     load();
     document.body.addEventListener('click', () => audioInit(), { once: true });
+    try {
+      document.querySelectorAll('#title .faces img').forEach(el => {
+        const s = el.getAttribute('data-path') || el.getAttribute('src');
+        if (s) {
+          el.setAttribute('data-path', s);
+          el.onerror = function() { if (window.imgErr) window.imgErr(this); };
+          el.src = AURL(s);
+        }
+      });
+      setInterval(() => { fetch('index.html', { method: 'HEAD', cache: 'no-store' }).catch(() => {}); }, 25000);
+    } catch (e) {}
     if (!SAVE.giftOpened) UI.gift(); else UI.title();
   },
   gift() {
@@ -47,23 +64,82 @@ const UI = {
     REGIONS.forEach((r, i) => {
       const un = regionUnlocked(i);
       const t = h(`<button class="tab ${i === UI.region ? 'sel' : ''} ${un ? '' : 'locked'}">${un ? '' : '🔒 '}${r.short}</button>`);
-      t.onclick = () => { if (!un) return UI.toast('Beat the big boss of the last area first!'); sfx('click'); UI.region = i; UI.map(); };
+      t.onclick = () => { if (!un) return UI.toast('Beat the big boss of the last Oslo area first!'); sfx('click'); UI.region = i; UI.map(); };
       tabs.appendChild(t);
     });
+    const reg = REGIONS[UI.region];
     $('#bones').textContent = SAVE.bones;
-    $('#regionName').textContent = REGIONS[UI.region].name;
-    const grid = $('#cards'); grid.innerHTML = '';
+    $('#regionName').textContent = reg.name;
+    const subEl = $('#regionSub'); if (subEl) subEl.textContent = reg.sub ? '📍 ' + reg.sub : '';
+    const vBtn = $('#btnMapView');
+    if (vBtn) {
+      vBtn.textContent = UI.gridMode ? '🗺️ Oslo Map' : '🃏 Grid View';
+      vBtn.onclick = () => { sfx('click'); UI.gridMode = !UI.gridMode; UI.map(); };
+    }
+    const osloEl = $('#osloMap'), grid = $('#cards');
+    if (osloEl) osloEl.style.display = UI.gridMode ? 'none' : 'block';
+    grid.style.display = UI.gridMode ? 'grid' : 'none';
+    if (osloEl) osloEl.innerHTML = '';
+    grid.innerHTML = '';
     const list = BOSSES.filter(b => b.region === UI.region);
-    list.forEach(b => {
+    if (osloEl && !UI.gridMode) {
+      const mapPath = reg.map || ('a/oslo_' + UI.region + '.jpg');
+      osloEl.appendChild(h(simg(mapPath, reg.name, 'oslo-bg')));
+      osloEl.appendChild(h('<div class="oslo-vignette"></div>'));
+      // Draw SVG trail lines between landmarks in the region
+      const minors = list.filter(b => !b.boss), mainBoss = list.find(b => b.boss);
+      const lines = [];
+      for (let i = 0; i < minors.length - 1; i++) {
+        const s1 = (typeof OSLO_SPOTS !== 'undefined' && OSLO_SPOTS[minors[i].id]) || [20 + i * 10, 50, 'Oslo'];
+        const s2 = (typeof OSLO_SPOTS !== 'undefined' && OSLO_SPOTS[minors[i + 1].id]) || [30 + i * 10, 50, 'Oslo'];
+        lines.push(`<line x1="${s1[0]}" y1="${s1[1]}" x2="${s2[0]}" y2="${s2[1]}" stroke="rgba(242,210,122,0.45)" stroke-width="0.45" stroke-dasharray="1.2,1.0" />`);
+      }
+      if (mainBoss) {
+        const bs = (typeof OSLO_SPOTS !== 'undefined' && OSLO_SPOTS[mainBoss.id]) || [50, 50, 'Oslo'];
+        minors.forEach(m => {
+          const ms = (typeof OSLO_SPOTS !== 'undefined' && OSLO_SPOTS[m.id]) || [30, 50, 'Oslo'];
+          const beat = SAVE.beaten[m.id];
+          lines.push(`<line x1="${ms[0]}" y1="${ms[1]}" x2="${bs[0]}" y2="${bs[1]}" stroke="${beat ? 'rgba(255,215,100,0.65)' : 'rgba(200,80,60,0.32)'}" stroke-width="${beat ? '0.55' : '0.35'}" stroke-dasharray="0.9,0.9" />`);
+        });
+      }
+      const svg = h(`<svg class="oslo-paths" viewBox="0 0 100 100" preserveAspectRatio="none">${lines.join('')}</svg>`);
+      osloEl.appendChild(svg);
+    }
+    list.forEach((b, idx) => {
       const un = bossUnlocked(b), beat = SAVE.beaten[b.id];
-      const hint = b.boss && !un ? `Beat ${MINORS_TO_UNLOCK_BOSS} monsters to open (${minorsBeaten(b.region)}/${MINORS_TO_UNLOCK_BOSS})` : (b.start && !beat ? 'Start here!' : '');
-      const c = h(`<div class="card ${b.boss ? 'boss' : ''} ${un ? '' : 'locked'} ${beat ? 'beat' : ''}">
-        <div class="pic" style="background-image:url(a/${b.id}_card.jpg)"></div>
-        <div class="meta"><div class="nm">${b.boss ? '👑 ' : ''}${b.name}</div><div class="tt">${b.title}</div>
-        <div class="row"><span>💀 ${b.tier}</span><span>Weak: ${ELEM[b.weak]}</span></div></div>
-        ${beat ? '<div class="stamp">FELLED</div>' : ''}${!un ? '<div class="lock">🔒</div>' : ''}${hint ? `<div class="hint">${hint}</div>` : ''}</div>`);
-      c.onclick = () => { if (!un) return UI.toast(hint || 'Locked'); sfx('click'); UI.intro(b.id); };
-      grid.appendChild(c);
+      const spot = (typeof OSLO_SPOTS !== 'undefined' && OSLO_SPOTS[b.id]) || [18 + (idx % 4) * 22, 30 + Math.floor(idx / 4) * 38, reg.short];
+      const hint = b.boss && !un ? `Beat ${MINORS_TO_UNLOCK_BOSS} monsters (${minorsBeaten(b.region)}/${MINORS_TO_UNLOCK_BOSS})` : (b.start && !beat ? '⚔️ Start here!' : '');
+      const cardPath = `a/${b.id}_card.jpg`;
+      if (osloEl && !UI.gridMode) {
+        const pin = h(`<div class="mnode ${b.boss ? 'boss' : ''} ${un ? '' : 'locked'} ${beat ? 'beat' : ''}" style="left:${spot[0]}%;top:${spot[1]}%">
+          ${hint ? `<div class="mhint">${hint}</div>` : ''}
+          <div class="mport">
+            ${simg(cardPath, b.name, 'cpic')}
+          </div>
+          ${beat ? '<div class="mstamp">FELLED</div>' : ''}${!un ? '<div class="mlock">🔒</div>' : ''}
+          <div class="mlabel">
+            <div class="mspot">📍 ${spot[2]}</div>
+            <div class="mnm">${b.boss ? '👑 ' : ''}${b.name}</div>
+            <div class="mrow"><span>💀 ${b.tier}</span><span>Weak: ${ELEM[b.weak]}</span></div>
+          </div>
+        </div>`);
+        pin.onclick = () => { if (!un) return UI.toast(hint || 'Locked'); sfx('click'); UI.intro(b.id); };
+        osloEl.appendChild(pin);
+      }
+      if (UI.gridMode) {
+        const c = h(`<div class="card ${b.boss ? 'boss' : ''} ${un ? '' : 'locked'} ${beat ? 'beat' : ''}">
+          <div class="pic">
+            ${simg(cardPath, b.name, 'cpic')}
+          </div>
+          <div class="meta">
+            <div class="spot-tag">📍 ${spot[2]}</div>
+            <div class="nm">${b.boss ? '👑 ' : ''}${b.name}</div><div class="tt">${b.title}</div>
+            <div class="row"><span>💀 ${b.tier}</span><span>Weak: ${ELEM[b.weak]}</span></div>
+          </div>
+          ${beat ? '<div class="stamp">FELLED</div>' : ''}${!un ? '<div class="lock">🔒</div>' : ''}${hint ? `<div class="hint">${hint}</div>` : ''}</div>`);
+        c.onclick = () => { if (!un) return UI.toast(hint || 'Locked'); sfx('click'); UI.intro(b.id); };
+        grid.appendChild(c);
+      }
     });
     $('#btnForge').onclick = () => { sfx('click'); UI.forge('weapons'); };
     $('#btnSettings').onclick = () => { sfx('click'); UI.settings(); };
@@ -71,11 +147,15 @@ const UI = {
   },
   intro(id) {
     const b = BOSSES.find(x => x.id === id); show('intro');
-    $('#introPic').style.backgroundImage = `url(a/${id}_card.jpg)`;
+    const spot = (typeof OSLO_SPOTS !== 'undefined' && OSLO_SPOTS[id]) || [50, 50, REGIONS[b.region].name];
+    const ip = $('#introPic');
+    ip.style.backgroundImage = 'none';
+    ip.innerHTML = simg(`a/${id}_card.jpg`, b.name, 'cpic');
     $('#introName').textContent = b.name; $('#introTitle').textContent = b.title;
     const tries = SAVE.deaths[id] || 0;
     $('#introInfo').innerHTML = `
-      <div>Danger: ${'💀'.repeat(b.tier)}</div><div>Area: ${REGIONS[b.region].name}${b.boss ? ' · 👑 Big boss' : ''}</div>
+      <div>Danger: ${'💀'.repeat(b.tier)}</div>
+      <div>Location: <b>📍 ${spot[2]}</b> (${REGIONS[b.region].name})${b.boss ? ' · 👑 Area Boss' : ''}</div>
       <div>Weak to: <b>${ELEM[b.weak]} ${CHARMS[b.weak].name}</b> ${SAVE.equip.charm === b.weak ? '✅ equipped!' : (SAVE.crafted[b.weak] ? '(you have it — equip it in the Forge!)' : '')}</div>
       <div>Drops: ${SAVE.beaten[id] ? b.drop.icon + ' ' + b.drop.name : '❓ ???'}</div>
       ${tries ? `<div class="tip">💡 ${TIPS[SAVE.deaths[id + '_last']] || TIPS.default}</div>` : ''}
@@ -104,12 +184,12 @@ const UI = {
       SAVE.bones += bones; SAVE.beaten[b.id] = (SAVE.beaten[b.id] || 0) + 1;
       if (first) SAVE.items[b.drop.id] = true;
       if (first && !SAVE.equip.spirit) SAVE.equip.spirit = b.id;
-      html = `<h1 class="gold">MONSTER FELLED</h1><div class="pic" style="background-image:url(a/${b.id}_card.jpg)"></div>
+      html = `<h1 class="gold">MONSTER FELLED</h1><div class="pic">${simg('a/' + b.id + '_card.jpg', b.name, 'cpic')}</div>
         <p>+${bones} 🦴 bones${first ? '' : ' (replay)'}</p>
         ${first ? `<p class="item">${b.drop.icon} You found: <b>${b.drop.name}</b></p><p>👻 ${b.name} can now fight for you as a <b>Spirit</b>!</p>` : ''}
         ${first && b.boss ? `<p class="item">❤️ Your max health went up!</p>` : ''}
-        ${first && b.boss && !b.final ? `<p class="item">🗺️ A new area is open: <b>${REGIONS[b.region + 1].name}</b>!</p>` : ''}
-        ${b.final && first ? `<p class="item big">🏆 YOU BEAT THE WHOLE SKETCHBOOK! 🏆<br>Merry Christmas, ${HERO_NAME}! Now try Legend mode…</p>` : ''}
+        ${first && b.boss && !b.final ? `<p class="item">🗺️ A new area of Oslo is open: <b>${REGIONS[b.region + 1].name}</b>!</p>` : ''}
+        ${b.final && first ? `<p class="item big">🏆 YOU SAVED ALL OF OSLO! 🏆<br>Merry Christmas, ${HERO_NAME}! Now try Legend mode…</p>` : ''}
         <p class="sub">${f.p.dodges ? `You dodged ${f.p.dodges} attacks!` : ''}</p>`;
     } else {
       const bones = Math.floor(f.dmgDealt / 12);
@@ -185,7 +265,7 @@ const UI = {
       row('🚫', 'No spirit', 'Fight alone, like a true hero.', SAVE.equip.spirit ? 'Equip' : 'Equipped', () => { SAVE.equip.spirit = null; save(); });
       const beat = BOSSES.filter(b => SAVE.beaten[b.id]);
       if (!beat.length) row('👻', 'No spirits yet', 'Every monster you beat becomes a spirit that can help you fight!', null, null, 'dim');
-      for (const b of beat) row(`<img src="a/${b.id}.webp">`, b.name, `Power 💀 ${b.tier} · Tap 👻 in a fight to call it (once per fight).`, SAVE.equip.spirit === b.id ? 'Equipped' : 'Equip', () => { SAVE.equip.spirit = b.id; save(); sfx('summon'); });
+      for (const b of beat) row(simg('a/' + b.id + '_card.jpg', b.name, ''), b.name, `Power 💀 ${b.tier} · Tap 👻 in a fight to call it (once per fight).`, SAVE.equip.spirit === b.id ? 'Equipped' : 'Equip', () => { SAVE.equip.spirit = b.id; save(); sfx('summon'); });
     }
     if (tab === 'trophies') {
       const all = BOSSES.filter(b => b.drop.trophy);
