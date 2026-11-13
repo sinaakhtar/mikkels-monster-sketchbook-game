@@ -40,8 +40,21 @@ function layoutButtons() {
   BTNS.heal  = { x: SW - 225 * s - pad, y: SH - 205 * s - pad, r: 40 * s, icon: '🧪', label: '', key: 'E' };
   BTNS.spirit= { x: SW - 95 * s - pad, y: SH - 250 * s - pad, r: 40 * s, icon: '👻', label: '', key: 'Q' };
   BTNS.pause = { x: SW - 42, y: 42, r: 28, icon: '⏸', label: '', key: 'Esc' };
+  BTNS.pixel = { x: SW / 2, y: (SW < 640 ? 96 : 74) * s, r: 24 * s, w: 178 * s, h: 38 * s, icon: '🕹️', label: '', key: 'V' };
 }
-function btnAt(x, y) { for (const k in BTNS) { const b = BTNS[k]; if (Math.hypot(x - b.x, y - b.y) < b.r * 1.15) return k; } return null; }
+function btnAt(x, y) {
+  for (const k in BTNS) {
+    if (k === 'pixel') {
+      if (!(F && F.b && typeof isPixelSupported === 'function' && isPixelSupported(F.b.id))) continue;
+      const b = BTNS[k];
+      if (Math.abs(x - b.x) <= b.w * 0.55 && Math.abs(y - b.y) <= b.h * 0.65) return k;
+      continue;
+    }
+    const b = BTNS[k];
+    if (Math.hypot(x - b.x, y - b.y) < b.r * 1.15) return k;
+  }
+  return null;
+}
 const pointers = {};
 function onDown(e) {
   audioInit();
@@ -71,6 +84,7 @@ function press(b) {
   if (b === 'heal') P.buf.heal = 0.25;
   if (b === 'spirit') summonSpirit();
   if (b === 'pause') UI.pause();
+  if (b === 'pixel' && typeof togglePixelMode === 'function') togglePixelMode();
 }
 window.addEventListener('keydown', e => {
   audioInit(); INPUT.keys[e.code] = true;
@@ -83,6 +97,7 @@ window.addEventListener('keydown', e => {
   if (e.code === 'KeyH' || e.code === 'KeyE') press('heal');
   if (e.code === 'KeyL' || e.code === 'KeyQ') press('spirit');
   if (e.code === 'Escape' || e.code === 'KeyP') press('pause');
+  if (e.code === 'KeyV' && F.b && typeof isPixelSupported === 'function' && isPixelSupported(F.b.id)) press('pixel');
 });
 window.addEventListener('keyup', e => { INPUT.keys[e.code] = false; });
 function readMove() {
@@ -124,6 +139,7 @@ function startFight(bossId) {
         bg: img('a/' + def.id + '_bg.jpg') };
   INPUT.btn = {}; INPUT.joy = null;
   prepBoss(B); buildLair(def.region, def.id);
+  if (typeof syncBossPixelAssets === 'function') syncBossPixelAssets(B);
   banner(def.name, '#e9d9a8', def.title);
   introSting(def.region, def); setTimeout(() => { if (F && F.b === B) bossVoice(B, 'intro'); }, 350);
   musicStart(def.region, def);
@@ -840,6 +856,7 @@ function checkPlayerHits(P) {
       b.guardHit = true; sfx('clang'); shake(5);
       floatText(b.x, b.y - b.r - 35, 'GUARD!', '#ffd84a', 22);
       particles((P.x + b.x) / 2, (P.y + b.y) / 2, 8, '#ffd84a', 240, 0.3, 4);
+      if (typeof spawnPixelHitSpark === 'function') spawnPixelHitSpark((P.x + b.x) / 2, (P.y + b.y) / 2 - 22, 0.8);
     } else {
       const last = P.combo === w.combo - 1 && w.combo > 2, wasStag = b.stagger > 0;
       let d = w.dmg * (1 + WLVL_MULT * P.lvl) * (last ? 1.5 : 1);
@@ -853,6 +870,7 @@ function checkPlayerHits(P) {
       F.hitstop = w.dmg > 40 ? 0.09 : 0.045; shake(w.dmg > 40 ? 9 : 4);
       sfx(w.dmg > 40 ? 'bighit' : 'hit', { x: hx, finisher: last, weak, charm: ch, staggered: wasStag });
       particles(hx, hy, 10, '#fff2c0', 260, 0.35, 4);
+      if (typeof spawnPixelHitSpark === 'function') spawnPixelHitSpark(hx, hy - 22, (last || wasStag) ? 1.35 : 1);
       if (ch === 'fire') { b.burnB += 0.22 * (weak ? 1.6 : 1); if (b.burnB >= 1) { b.burnB = 0; b.burnT = 4; floatText(b.x, b.y - b.r - 40, 'BURNING!', '#ff8a2a', 22); sfx('burn'); } }
       if (ch === 'ice') { b.iceB += 0.16 * (weak ? 1.6 : 1); if (b.iceB >= 1) { b.iceB = 0; b.slowT = 4.5; floatText(b.x, b.y - b.r - 40, 'FROZEN!', '#9fe3ff', 22); sfx('freeze'); particles(b.x, b.y, 20, '#cff', 200); } }
       if (ch === 'spark') particles(hx, hy, 6, '#ffe84a', 300, 0.3, 3);
@@ -1302,6 +1320,7 @@ function drawHUD() {
   bar(g, bx, by + 16 * s, bw, 5 * s, b.poise / b.poiseMax, b.stagger > 0 ? '#fff' : '#d9b23a');
   // buttons
   for (const k in BTNS) {
+    if (k === 'pixel') continue;
     const B = BTNS[k]; let dim = false, extra = '';
     if (k === 'heal') { extra = String(P.flasks); dim = P.flasks <= 0; }
     if (k === 'spirit') { if (!SAVE.equip.spirit) continue; dim = F.spiritUsed; }
@@ -1317,6 +1336,7 @@ function drawHUD() {
     if (INPUT.kb && B.key) { g.font = `bold ${13 * s}px system-ui`; g.fillStyle = '#ffe9a8'; g.globalAlpha = 0.9; g.fillText(B.key, B.x, B.y - B.r - 10 * s); }
     g.restore();
   }
+  if (typeof drawPixelTogglePill === 'function') drawPixelTogglePill(g, s);
   // joystick
   if (INPUT.joy) {
     const j = INPUT.joy, R = 70 * s;
@@ -1385,23 +1405,31 @@ function render() {
   const g = ctx;
   g.setTransform(DPR, 0, 0, DPR, 0, 0); g.clearRect(0, 0, SW, SH);
   if (!F) return;
-  const sh = F.shake;
-  g.save(); g.translate(OX + rand(-sh, sh), OY + rand(-sh, sh)); g.scale(SC, SC);
-  drawArena();
+  const sh = F.shake, px = typeof isPixelMode === 'function' && isPixelMode();
+  const tx = px ? Math.round(OX + rand(-sh, sh)) : OX + rand(-sh, sh);
+  const ty = px ? Math.round(OY + rand(-sh, sh)) : OY + rand(-sh, sh);
+  g.save();
+  if (px) g.imageSmoothingEnabled = false;
+  g.translate(tx, ty); g.scale(SC, SC);
+  px ? drawPixelArena() : drawArena();
   drawHazards();
   // depth sort
-  const ents = [{ y: F.b.y + F.b.r * 0.5, d: () => { drawBossFancy(F.b); drawGuard(F.b); } }, { y: F.p.y, d: () => drawPlayer(F.p) }];
+  const ents = [
+    { y: F.b.y + F.b.r * 0.5, d: () => { px ? drawBossPixel(F.b) : drawBossFancy(F.b); drawGuard(F.b); } },
+    { y: F.p.y, d: () => { px ? drawPlayerPixel(F.p) : drawPlayer(F.p); } },
+  ];
   if (F.b.clones) for (const c of F.b.clones) ents.push({ y: c.y + F.b.r * 0.5, d: () => drawClone(F.b, c) });
-  for (const o of F.objs) if (o.k !== 'mud') ents.push({ y: o.k === 'drop' ? o.ly : o.y, d: () => drawObj(o) });
+  for (const o of F.objs) if (o.k !== 'mud') ents.push({ y: o.k === 'drop' ? o.ly : o.y, d: () => { if (!(px && drawPixelObj(o))) drawObj(o); } });
   ents.sort((a, b) => a.y - b.y);
   drawMinions();
   for (const e of ents) if (e.d) e.d();
   drawAllies();
   drawHanging();
-  drawAmbient();
-  drawFx();
+  if (!px) drawAmbient();
+  px ? drawPixelFx() : drawFx();
   g.restore();
-  drawHUD();
+  g.imageSmoothingEnabled = true;
+  px ? drawHUDPixel() : drawHUD();
 }
 function loop(t) {
   const dt = Math.min(0.05, (t - (loop.last || t)) / 1000); loop.last = t;

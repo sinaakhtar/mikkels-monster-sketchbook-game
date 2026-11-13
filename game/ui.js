@@ -3,7 +3,7 @@
 const SAVE_KEY = 'mikkel-monsters-v1';
 const DEFAULT_SAVE = () => ({
   v: 1, bones: 0, beaten: {}, items: {}, crafted: {}, wlvl: { twig: 0 }, owned: { twig: true },
-  equip: { weapon: 'twig', charm: null, spirit: null }, diff: 'brave', sound: true, music: true, lairSeen: 0, giftOpened: false, seenTut: false, deaths: {},
+  equip: { weapon: 'twig', charm: null, spirit: null }, diff: 'brave', sound: true, music: true, pixelM27: true, lairSeen: 0, giftOpened: false, seenTut: false, deaths: {},
 });
 let SAVE = DEFAULT_SAVE();
 function load() { try { const s = JSON.parse(localStorage.getItem(SAVE_KEY)); if (s && s.v === 1) SAVE = Object.assign(DEFAULT_SAVE(), s); } catch (e) {} }
@@ -108,7 +108,8 @@ const UI = {
     list.forEach((b, idx) => {
       const un = bossUnlocked(b), beat = SAVE.beaten[b.id];
       const spot = (typeof OSLO_SPOTS !== 'undefined' && OSLO_SPOTS[b.id]) || [18 + (idx % 4) * 22, 30 + Math.floor(idx / 4) * 38, reg.short];
-      const hint = b.boss && !un ? `Beat ${MINORS_TO_UNLOCK_BOSS} monsters (${minorsBeaten(b.region)}/${MINORS_TO_UNLOCK_BOSS})` : (b.start && !beat ? '⚔️ Start here!' : '');
+      const pxSup = typeof isPixelSupported === 'function' && isPixelSupported(b.id);
+      const hint = b.boss && !un ? `Beat ${MINORS_TO_UNLOCK_BOSS} monsters (${minorsBeaten(b.region)}/${MINORS_TO_UNLOCK_BOSS})` : (pxSup ? '🕹️ 16-Bit Test!' : (b.start && !beat ? '⚔️ Start here!' : ''));
       const cardPath = `a/${b.id}_card.jpg`;
       if (osloEl && !UI.gridMode) {
         const pin = h(`<div class="mnode ${b.boss ? 'boss' : ''} ${un ? '' : 'locked'} ${beat ? 'beat' : ''}" style="left:${spot[0]}%;top:${spot[1]}%">
@@ -146,11 +147,30 @@ const UI = {
     $('#btnTitle').onclick = () => { sfx('click'); UI.title(); };
   },
   intro(id) {
-    const b = BOSSES.find(x => x.id === id); show('intro'); musicStart('map');
+    const b = BOSSES.find(x => x.id === id); show('intro'); musicStart('map'); UI.introId = id;
     const spot = (typeof OSLO_SPOTS !== 'undefined' && OSLO_SPOTS[id]) || [50, 50, REGIONS[b.region].name];
     const ip = $('#introPic');
-    ip.style.backgroundImage = 'none';
-    ip.innerHTML = simg(`a/${id}_card.jpg`, b.name, 'cpic');
+    const pxSup = typeof isPixelSupported === 'function' && isPixelSupported(id);
+    const pxOn = pxSup && isPixelPref();
+    if (pxOn) {
+      ip.style.backgroundImage = `url(${AURL('a/m27_px_bg.webp')})`;
+      ip.style.backgroundSize = 'cover';
+      ip.style.imageRendering = 'pixelated';
+      ip.innerHTML = `<img src="${AURL('a/m27_px.webp')}" alt="${b.name}" style="width:92%;height:92%;object-fit:contain;image-rendering:pixelated;filter:drop-shadow(0 8px 0 #09070d)">`;
+    } else {
+      ip.style.backgroundImage = 'none';
+      ip.style.imageRendering = '';
+      ip.innerHTML = simg(`a/${id}_card.jpg`, b.name, 'cpic');
+    }
+    const pxBtn = $('#btnPixelIntro');
+    if (pxBtn) {
+      pxBtn.style.display = pxSup ? '' : 'none';
+      if (pxSup) {
+        pxBtn.textContent = pxOn ? '🕹️ 16-Bit Look: ON' : '🎨 16-Bit Look: OFF';
+        pxBtn.style.borderColor = pxOn ? '#84ff7a' : '#8a8090';
+        pxBtn.onclick = () => { togglePixelMode(); UI.intro(id); };
+      }
+    }
     $('#introName').textContent = b.name; $('#introTitle').textContent = b.title;
     const tries = SAVE.deaths[id] || 0;
     $('#introInfo').innerHTML = `
@@ -158,6 +178,7 @@ const UI = {
       <div>Location: <b>📍 ${spot[2]}</b> (${REGIONS[b.region].name})${b.boss ? ' · 👑 Area Boss' : ''}</div>
       <div>Weak to: <b>${ELEM[b.weak]} ${CHARMS[b.weak].name}</b> ${SAVE.equip.charm === b.weak ? '✅ equipped!' : (SAVE.crafted[b.weak] ? '(you have it — equip it in the Forge!)' : '')}</div>
       <div>Drops: ${SAVE.beaten[id] ? b.drop.icon + ' ' + b.drop.name : '❓ ???'}</div>
+      ${pxSup ? `<div class="tip" style="border-left-color:#84ff7a;background:rgba(20,55,35,0.5)">🕹️ <b>16-Bit Arcade Prototype:</b> Toggle ON/OFF here or press <b>V</b> (or tap the top badge) live mid-fight!</div>` : ''}
       ${tries ? `<div class="tip">💡 ${TIPS[SAVE.deaths[id + '_last']] || TIPS.default}</div>` : ''}
       ${lairInfo(b.region, id).length ? `<div class="lair"><b>In this lair:</b>${lairInfo(b.region, id).map(x => `<div>${x.icon} <b>${x.name}</b> — ${x.desc}</div>`).join('')}</div>` : ''}
       <div class="gear">Your gear: ${WEAPONS[SAVE.equip.weapon].icon} ${WTIERS[weaponTier(SAVE.wlvl[SAVE.equip.weapon] || 0)].name} ${WEAPONS[SAVE.equip.weapon].name} +${SAVE.wlvl[SAVE.equip.weapon] || 0}
@@ -172,6 +193,15 @@ const UI = {
   },
   pause() {
     if (!F) return; F.paused = true; show('pause'); musicPause(true);
+    const pxBtn = $('#btnPixelPause'), pxSup = typeof isPixelSupported === 'function' && isPixelSupported(F.b.id);
+    if (pxBtn) {
+      pxBtn.style.display = pxSup ? '' : 'none';
+      if (pxSup) {
+        const syncTxt = () => { pxBtn.textContent = isPixelPref() ? '🕹️ 16-Bit Look: ON' : '🎨 16-Bit Look: OFF'; };
+        syncTxt();
+        pxBtn.onclick = () => { togglePixelMode(); syncTxt(); };
+      }
+    }
     $('#btnResume').onclick = () => { show('none'); F.paused = false; loop.last = performance.now(); musicPause(false); };
     $('#btnQuit').onclick = () => { musicPause(false); UI.map(); };
     $('#btnRetry2').onclick = () => { musicPause(false); UI.fight(F.b.id); };
@@ -292,6 +322,10 @@ const UI = {
     // keyboard shortcuts for menus (handy when testing on a computer)
     const vis = id => { const el = document.getElementById(id); return el && el.classList.contains('on'); };
     const k = e.code;
+    if (k === 'KeyV') {
+      if (vis('intro') && $('#btnPixelIntro') && $('#btnPixelIntro').style.display !== 'none') return $('#btnPixelIntro').click();
+      if (vis('pause') && $('#btnPixelPause') && $('#btnPixelPause').style.display !== 'none') return $('#btnPixelPause').click();
+    }
     if (vis('pause') && (k === 'Escape' || k === 'KeyP')) return $('#btnResume').click();
     if (vis('tut') && (k === 'Enter' || k === 'Space')) return $('#tut').click();
     if (k !== 'Enter' && k !== 'Space' && k !== 'KeyR' && k !== 'Escape') return;
